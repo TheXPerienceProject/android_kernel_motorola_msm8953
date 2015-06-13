@@ -24,7 +24,13 @@
  *when the device suspends and brings them online only when awake leading to
  *significant power savings
  *V.01-A
+ *
+ *v1.1 transform your device to dual-core or sigle core to make more powersave
+ * v1.2.1 Sampling rate tunable-
+ * v1.3 Fix some endurance mode
+ * Threshold are now tunable
  */
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -35,13 +41,40 @@
 
 #define ALESSAPLUG "AlessaPlug"
 #define ALESSA_VERSION 1
-#define ALESSA_SUB_VERSION 1
+#define ALESSA_SUB_VERSION 3
 
 static int suspend_cpu_num = 2;
 static int resume_cpu_num = 3;
 static int endurance_level = 0;
 static int device_cpu = 4;
+static int core_limit = 4;
 
+/*#define CPU_UP_THRESHOLD      (65)
+#define CPU_DOWN_DIFFERENTIAL (10)
+#define CPU_UP_AVERAGE_TIME   (10)
+#define CPU_DOWN_AVERAGE_TIME (10)*/
+#define CPU_LOAD_THRESHOLD    (65)
+
+#define DEF_SAMPLING_MS (500)
+
+static int sampling_time = DEF_SAMPLING_MS;
+static int load_threshold = CPU_LOAD_THRESHOLD;
+
+static struct workqueue_struct *Alessa_plug_wq;
+static struct delayed_work Alessa_plug_work;
+static unsigned int last_load[4] ={0, 0, 0, 0};
+
+struct cpu_load_data{
+	u64 prev_cpu_idle;
+	u64 prev_cpu_wall;
+	unsigned int average_load_maxfreq;
+	unsigned int cur_load_maxfreq;
+	unsigned int samples;
+	unsigned int windows_size;
+	cpumask_var_t related_cpu;
+};
+
+static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
 
 static inline void offline_cpu(void)
 {
@@ -159,6 +192,107 @@ static ssize_t __ref alessa_plug_endurance_store(struct kobject *kobj, struct ko
 	return count;
 }
 
+static ssize_t alessa_plug_sampling(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d", sampling_time);
+}
+
+static ssize_t __ref alessa_plug_sampling_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	sscanf(buf, "%d", &val);
+	if(val > 50)
+		sampling_time = val;
+	return count;
+}
+
+static ssize_t alessa_plug_load(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d", load_threshold);
+}
+
+static ssize_t __ref alessa_plug_load_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	sscanf(buf, "%d", &val);
+	if(val > 10)
+		load_threshold = val;
+	return count;
+}
+
+static unsigned int get_curr_load(unsigned int cpu)//Current cpu load
+{
+	int ret;
+	unsigned int idle_time, wall_time;
+	unsigned int cur_load, load_max_freq;
+	u64 cur_wall_time, cur_idle_time;
+	struct cpu_load_data *pcpu = &per_cpu(cpuload, cpu);
+	struct cpufreq_policy policy;
+
+	ret = cpufreq_get_policy(&policy, cpu);
+	if(ret)
+		return -EINVAL;
+
+	cur_idle_time = get_cpu_idle_time(cpu, &cur_wall_time, 0);
+
+	wall_time = (unsigned int) (cur_wall_time - pcpu->prev_cpu_wall);
+	pcpu->prev_cpu_wall = cur_wall_time;
+
+	idle_time = (unsigned int) (cur_idle_time - pcpu->prev_cpu_idle);
+
+	pcpu->prev_cpu_idle = cur_idle_time;
+
+	if(unlikely(!wall_time || wall_time < idle_time))
+		return 0;
+
+	cur_load = 100 * (wall_time - idle_time) / wall_time;
+		return cur_load;
+}
+
+static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
+{
+	int i;
+	unsigned int load[4], average_load[4];
+
+	switch(endurance_level)
+{
+	case 0:
+		core_limit = 4;
+	case 1:
+		core_limit = 2;
+	case 2:
+		core_limit = 1;
+	default:
+		core_limit = 4;
+	}
+	for(i=0; i < core_limit; i++){
+		if(cpu_online(i))
+			load[i] = get_curr_load(i);
+		else
+			load[i] = 0;
+
+	average_load[i] = ((int) load[i] + (int) last_load[i]) / 2;
+	last_load[i] = load[i];
+}
+	for(i=0;i<core_limit;i++)
+{
+	if(cpu_online(i) && average_load[i] > load_threshold && cpu_is_offline(i+1))
+	{
+	pr_info("Alessa Plug: Bringing back cpu %d\n",i);
+		if(!((i+1) > 3))
+			cpu_up(i+1);
+}
+else if(cpu_online(i) && average_load[i] < load_threshold && cpu_online (i+1))
+{
+	pr_info("Alessa Plug: offlining cpu %d\n",i);
+		if(!(i+1) == 0)
+		cpu_down(i+1);
+	}
+}
+	queue_delayed_work_on(0,Alessa_plug_wq, &Alessa_plug_work,
+				msecs_to_jiffies(sampling_time));
+}
+
 static void alessa_plug_suspend(struct power_suspend *h)
 {
 	offline_cpu();
@@ -191,11 +325,23 @@ static struct kobj_attribute alessa_plug_endurance_attribute =
 		0666,
 		alessa_plug_endurance, alessa_plug_endurance_store);
 
+static struct kobj_attribute alessa_plug_sampling_attribute =
+	__ATTR(sampling_rate,
+		0666,
+		alessa_plug_sampling, alessa_plug_sampling_store);
+
+static struct kobj_attribute alessa_plug_load_attribute =
+	__ATTR(load_threshold,
+		0666,
+		alessa_plug_load, alessa_plug_load_store);
+
 static struct attribute *alessa_plug_attrs[] =
     {
         &alessa_plug_ver_attribute.attr,
         &alessa_plug_suspend_cpu_attribute.attr,
 	&alessa_plug_endurance_attribute.attr,
+	&alessa_plug_sampling_attribute.attr,
+	&alessa_plug_load_attribute.attr,
         NULL,
     };
 
@@ -234,6 +380,13 @@ static int __init alessa_plug_init(void)
         }
 
         register_power_suspend(&alessa_plug_power_suspend_handler);
+
+	Alessa_plug_wq = alloc_workqueue("AlessaPlug",
+				WQ_HIGHPRI | WQ_UNBOUND, 1);
+
+	INIT_DELAYED_WORK(&Alessa_plug_work, alessa_plug_work_fn);
+	queue_delayed_work_on(0,Alessa_plug_wq, &Alessa_plug_work,
+				msecs_to_jiffies(10));
 
         pr_info("%s: init\n", ALESSAPLUG);
 
