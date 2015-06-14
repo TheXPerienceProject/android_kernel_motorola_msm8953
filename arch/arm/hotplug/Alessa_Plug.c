@@ -37,7 +37,7 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/cpu.h>
-#include <linux/powersuspend.h>
+#include <linux/lcd_notify.h>
 #include <linux/cpufreq.h>
 
 #define ALESSAPLUG "AlessaPlug"
@@ -59,6 +59,8 @@ static int core_limit = 4;
 
 #define DEF_SAMPLING_MS (500)
 
+static bool isSuspended = false;
+struct notifier_block lcd_worker;
 static int sampling_time = DEF_SAMPLING_MS;
 static int load_threshold = CPU_LOAD_THRESHOLD;
 
@@ -279,6 +281,19 @@ static unsigned int get_curr_load(unsigned int cpu)//Current cpu load
 		return cur_load;
 }
 
+static void alessa_plug_suspend(void)
+{
+	offline_cpu();
+	pr_info("%s: suspend\n", ALESSAPLUG);
+
+}
+
+static void __ref alessa_plug_resume(void)
+{
+	cpu_online_all();
+	pr_info("%s: resume\n", ALESSAPLUG);
+}
+
 static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
 {
 	int i;
@@ -319,23 +334,43 @@ else if(cpu_online(i) && average_load[i] < load_threshold && cpu_online (i+1))
 		cpu_down(i+1);
 	}
 }
-	if(alessa_HP_enabled != 0)
+	if(alessa_HP_enabled != 0 && !isSuspended)
 	queue_delayed_work_on(0,Alessa_plug_wq, &Alessa_plug_work,
 				msecs_to_jiffies(sampling_time));
-	else
+
+else {
+	if(!isSuspended)
 		cpu_online_all();
+	else
+		alessa_plug_suspend();
+	}
+
 }
 
-static void alessa_plug_suspend(struct power_suspend *h)
+static int lcd_notifier_callback(struct notifier_block *nb,
+                                 unsigned long event, void *data)//when you resume from screen off
 {
-	offline_cpu();
-	pr_info("%s: Suspend\n", ALESSAPLUG);
-}
 
-static void __ref alessa_plug_resume(struct power_suspend *h)//when you resume from screen off
-{
-	cpu_online_all();
-	pr_info("%s: Resume\n", ALESSAPLUG);
+	switch(event)
+	{
+		case LCD_EVENT_ON_START:
+			isSuspended = false;
+				queue_delayed_work_on(0, Alessa_plug_wq, &Alessa_plug_work,
+			msecs_to_jiffies(sampling_time));
+		pr_info("Alessa Plug: resume called\n");
+		break;
+		case LCD_EVENT_ON_END:
+		break;
+		case LCD_EVENT_OFF_START:
+			isSuspended = true;
+				pr_info("Alessa Plug: resume called\n");
+		break;
+		default:
+		break;
+	}
+		return 0;
+
+
 }
 
 static ssize_t alessa_plug_ver_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -389,11 +424,6 @@ static struct attribute_group alessa_plug_attr_group =
         .attrs = alessa_plug_attrs,
     };
 
-static struct power_suspend alessa_plug_power_suspend_handler =
-{
-	.suspend = alessa_plug_suspend,
-	.resume = alessa_plug_resume,
-};
 
 static struct kobject *alessa_plug_kobj;
 
@@ -418,7 +448,9 @@ static int __init alessa_plug_init(void)
                 kobject_put(alessa_plug_kobj);
         }
 
-        register_power_suspend(&alessa_plug_power_suspend_handler);
+	lcd_worker.notifier_call = lcd_notifier_callback;
+
+	lcd_register_client(&lcd_worker);
 
 	Alessa_plug_wq = alloc_workqueue("AlessaPlug",
 				WQ_HIGHPRI | WQ_UNBOUND, 1);
