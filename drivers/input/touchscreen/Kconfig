@@ -1222,4 +1222,10 @@ config TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE_MMI
 
 source "drivers/input/touchscreen/gt9xx/Kconfig"
 
+config SWEEP2SLEEP
+        tristate "Sweep to put device to sleep"
+        default y
+        help
+          Say Y here to support sweep2sleep
+
 endif
