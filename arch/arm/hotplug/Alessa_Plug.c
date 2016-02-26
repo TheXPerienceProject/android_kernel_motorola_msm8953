@@ -30,20 +30,28 @@
  * v1.3 Fix some endurance mode
  * Threshold are now tunable
  * v1.3.1 Added switch to enable or disable hotplug
+ * v1.4.0 Added WQ(Workqueue) for resume on LCD_notify
+ * and introducing touch boost
+ * v1.4.1 Fix some logic
+ * v1.4.2 Add some cpu idle info required if aren't present on cpufreq.c
  */
-
+#include <asm/cputime.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/kernel_stat.h>
 #include <linux/init.h>
 #include <linux/device.h>
+#include <linux/input.h>
+#include <linux/slab.h>
 #include <linux/cpu.h>
 #include <linux/lcd_notify.h>
 #include <linux/cpufreq.h>
+#include <linux/tick.h>
 
 #define ALESSAPLUG "AlessaPlug"
 #define ALESSA_VERSION 1
-#define ALESSA_SUB_VERSION 3
-#define ALESSA_MAINTENANCE 1
+#define ALESSA_SUB_VERSION 4
+#define ALESSA_MAINTENANCE 2
 
 static int suspend_cpu_num = 2;
 static int resume_cpu_num = 3;
@@ -65,10 +73,21 @@ static int sampling_time = DEF_SAMPLING_MS;
 static int load_threshold = CPU_LOAD_THRESHOLD;
 
 static int alessa_HP_enabled = 1;//To enable or disable hotplug
+static int touch_boost_enabled = 0;
 
+//Resume
+static struct workqueue_struct *Alessa_plug_resume_wq;
+static struct delayed_work Alessa_plug_resume_work;
+//work
 static struct workqueue_struct *Alessa_plug_wq;
 static struct delayed_work Alessa_plug_work;
+//Touch boost
+static struct workqueue_struct *Alessa_plug_boost_wq;
+static struct delayed_work Alessa_plug_touch_boost;
+//CPU CHARGE
 static unsigned int last_load[4] ={0, 0, 0, 0};
+
+
 
 struct cpu_load_data{
 	u64 prev_cpu_idle;
@@ -82,16 +101,53 @@ struct cpu_load_data{
 
 static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
 
+//HAX
+static inline u64 get_cpu_idle_time_jiffy(unsigned int cpu, u64 *wall)
+{
+	u64 idle_time;
+	u64 cur_wall_time;
+	u64 busy_time;
+
+	cur_wall_time = jiffies64_to_cputime64(get_jiffies_64());
+
+	busy_time = kcpustat_cpu(cpu).cpustat[CPUTIME_USER];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SYSTEM];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SOFTIRQ];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_STEAL];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_NICE];
+
+	idle_time = cur_wall_time - busy_time;
+	if (wall)
+		*wall = cputime_to_usecs(cur_wall_time);
+
+	return cputime_to_usecs(idle_time);
+}
+
+u64 get_cpu_idle_time(unsigned int cpu, u64 *wall, int io_busy)
+{
+	u64 idle_time = get_cpu_idle_time_us(cpu, io_busy ? wall : NULL);
+
+	if (idle_time == -1ULL)
+		return get_cpu_idle_time_jiffy(cpu, wall);
+	else if (!io_busy)
+		idle_time += get_cpu_iowait_time_us(cpu, wall);
+
+	return idle_time;
+}
+EXPORT_SYMBOL_GPL(get_cpu_idle_time);
+
+//
 static inline void offline_cpu(void)
 {
 	unsigned int cpu;
 	switch(endurance_level){
 	case 1:
-		if(suspend_cpu_num > 3)
+		if(suspend_cpu_num >= 3)
 			suspend_cpu_num = 3;
 	break;
 	case 2:
-		if(suspend_cpu_num > 2)
+		if(suspend_cpu_num >= 2)
 			suspend_cpu_num = 2;
 	break;
 	default:
@@ -154,6 +210,89 @@ size_t comes from standard C,is an unsigned type used for sizes of objects.
 ssize_t comes from posix, is a signed type used for a count of bytes or
 an error indication
 */
+
+//Code related to add touch boost support
+static void __ref alessa_plug_boost_work_fn(struct work_struct *work)
+{
+	int cpu;
+	for(cpu = 1; cpu < 4; cpu++){
+		if(cpu_is_offline(cpu))
+			cpu_up(cpu);
+	}
+}
+
+static void alessa_plug_input_event(struct input_handle *handle, unsigned int type, unsigned int code, int value)
+{
+	if ((type == EV_KEY) && (code == BTN_TOUCH) && (value == 1) && touch_boost_enabled == 1 && alessa_HP_enabled == 1)
+	{
+	pr_info("%s: touch boost\n", ALESSAPLUG);
+		queue_delayed_work_on(0, Alessa_plug_boost_wq, &Alessa_plug_touch_boost, msecs_to_jiffies(0));
+
+	}
+}
+
+static int alessa_plug_input_connect(struct input_handler *handler,
+			struct input_dev *dev, const struct input_device_id *id)
+{
+	struct input_handle *handle;
+	int error;
+/*
+* kzalloc — allocate memory. The memory is set to zero.
+* used by slab cache
+*
+* Kmalloc info
+* http://www.makelinux.net/books/lkd2/ch11lev1sec4
+*GFP_KERNEL
+*
+* This is a normal allocation and might block. This is the flag to use  * in process context code when it is safe to sleep. The kernel will do  * whatever it has to in order to obtain the memory requested by the     * caller. This flag should be your first choice.
+*
+*/
+	handle = kzalloc(sizeof(struct input_handle), GFP_KERNEL);
+	if(!handle)
+		return -ENOMEM;
+
+	handle->dev = dev;
+	handle->handler = handler;
+	handle->name = "cpufreq";
+
+	error = input_register_handle(handle);
+	if(error)
+		goto error2;
+
+	error = input_open_device(handle);
+	if(error)
+		goto error1;
+
+	return 0;
+
+error1:
+	input_unregister_handle(handle);
+error2:
+	kfree(handle);
+	return error;
+}
+
+static void alessa_plug_input_disconnect(struct input_handle *handle)
+{
+	input_close_device(handle);
+	input_unregister_handle(handle);
+	kfree(handle);//kfree — free previously allocated memory
+}
+
+static const struct input_device_id alessa_plug_ids[] = {
+	{.driver_info = 1},
+	{},
+};
+
+static struct input_handler alessa_plug_input_handler = {
+	.event      = alessa_plug_input_event,
+	.connect    = alessa_plug_input_connect,
+	.disconnect = alessa_plug_input_disconnect,
+	.name       = "alessa_plug_handler",
+	.id_table   = alessa_plug_ids,
+};
+
+//Finish part of the touch boost code
 static ssize_t alessa_plug_suspend_cpu(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%d", suspend_cpu_num);
@@ -164,7 +303,7 @@ static ssize_t alessa_plug_suspend_cpu_store(struct kobject *kobj, struct kobj_a
 {//This check How many cores are active
 	int val;
 	sscanf(buf, "%d", &val);
-	if(val < 1 || val > 4)
+	if(val < 1 || val > 3)
 		pr_info("%s: suspend cpus off-limits\n", ALESSAPLUG);
 	else
 		suspend_cpu_num = val;
@@ -209,7 +348,7 @@ static ssize_t __ref alessa_plug_sampling_store(struct kobject *kobj, struct kob
 	sscanf(buf, "%d", &val);
 	if(val > 50)
 		sampling_time = val;
-		return count;
+	return count;
 }
 
 static ssize_t alessa_plug_hp_enabled_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -228,8 +367,10 @@ static ssize_t __ref alessa_plug_hp_enabled_store(struct kobject *kobj, struct k
 	case 0:
 	case 1:
 		alessa_HP_enabled = val;
+	break;
 	default:
 		pr_info("AlessaPlug: invalid choice\n");
+	break;
 
 	}
 
@@ -237,7 +378,30 @@ static ssize_t __ref alessa_plug_hp_enabled_store(struct kobject *kobj, struct k
 		queue_delayed_work_on(0, Alessa_plug_wq, &Alessa_plug_work, msecs_to_jiffies(sampling_time));
 	return count;
 }
+//start touch boost reelated
+static ssize_t alessa_plug_tb_enabled(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d", touch_boost_enabled);
+}
 
+static ssize_t __ref alessa_plug_tb_enabled_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+
+	int val;
+	sscanf(buf, "%d", &val);
+	switch(val)
+	{
+	case 0:
+	case 1:
+		touch_boost_enabled = val;
+	break;
+	default:
+		pr_info("%s : invalid choice\n", ALESSAPLUG);
+	break;
+	}
+	return count;
+}
+//finish touch boost related
 static ssize_t alessa_plug_load(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%d", load_threshold);
@@ -294,6 +458,11 @@ static void __ref alessa_plug_resume(void)
 	pr_info("%s: resume\n", ALESSAPLUG);
 }
 
+static void __cpuinit alessa_plug_resume_work_fn(struct work_struct *work)
+{
+	alessa_plug_resume();
+}
+
 static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
 {
 	int i;
@@ -302,13 +471,17 @@ static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
 	switch(endurance_level)
 {
 	case 0:
-		core_limit = 4;
+		core_limit = 3;
+	break;
 	case 1:
 		core_limit = 2;
+	break;
 	case 2:
-		core_limit = 1;
+		core_limit = 0;
+	break;
 	default:
-		core_limit = 4;
+		core_limit = 3;
+	break;
 	}
 	for(i=0; i < core_limit; i++){
 		if(cpu_online(i))
@@ -355,15 +528,20 @@ static int lcd_notifier_callback(struct notifier_block *nb,
 	{
 		case LCD_EVENT_ON_START:
 			isSuspended = false;
+			if(alessa_HP_enabled)
 				queue_delayed_work_on(0, Alessa_plug_wq, &Alessa_plug_work,
 			msecs_to_jiffies(sampling_time));
+			else
+				queue_delayed_work_on(0, Alessa_plug_resume_wq, &Alessa_plug_resume_work,
+			msecs_to_jiffies(10));
+
 		pr_info("Alessa Plug: resume called\n");
 		break;
 		case LCD_EVENT_ON_END:
 		break;
 		case LCD_EVENT_OFF_START:
 			isSuspended = true;
-				pr_info("Alessa Plug: resume called\n");
+				pr_info("Alessa Plug: suspend called\n");
 		break;
 		default:
 		break;
@@ -408,6 +586,11 @@ static struct kobj_attribute alessa_plug_hp_enabled_attribute =
 		0666,
 		alessa_plug_hp_enabled_show, alessa_plug_hp_enabled_store);
 
+static struct kobj_attribute alessa_plug_tb_enabled_attribute =
+	__ATTR(touch_boost,
+		0666,
+		alessa_plug_tb_enabled, alessa_plug_tb_enabled_store);
+
 static struct attribute *alessa_plug_attrs[] =
     {
         &alessa_plug_ver_attribute.attr,
@@ -416,6 +599,7 @@ static struct attribute *alessa_plug_attrs[] =
 	&alessa_plug_sampling_attribute.attr,
 	&alessa_plug_load_attribute.attr,
 	&alessa_plug_hp_enabled_attribute.attr,
+	&alessa_plug_tb_enabled_attribute.attr,
         NULL,
     };
 
@@ -452,10 +636,27 @@ static int __init alessa_plug_init(void)
 
 	lcd_register_client(&lcd_worker);
 
+	//TOUCHBOOST
+	pr_info("%s : registerin input boost", ALESSAPLUG);
+	ret = input_register_handler(&alessa_plug_input_handler);
+		if(ret){
+	pr_err("%s: Failed to register input handler: %d\n", ALESSAPLUG, ret);
+	}
+	//TOUCH SDKSDALKDÑASLKDAKDAÑSLDKAÑDKL
+
 	Alessa_plug_wq = alloc_workqueue("AlessaPlug",
 				WQ_HIGHPRI | WQ_UNBOUND, 1);
 
+	Alessa_plug_resume_wq = alloc_workqueue("Alessa_plug_resume",
+				WQ_HIGHPRI | WQ_UNBOUND, 1);
+
+	Alessa_plug_boost_wq = alloc_workqueue("Alessa_plug_touch_boost",
+			WQ_HIGHPRI | WQ_UNBOUND, 1);
+
 	INIT_DELAYED_WORK(&Alessa_plug_work, alessa_plug_work_fn);
+	INIT_DELAYED_WORK(&Alessa_plug_resume_work, alessa_plug_resume_work_fn);
+	INIT_DELAYED_WORK(&Alessa_plug_touch_boost, alessa_plug_boost_work_fn);
+
 	queue_delayed_work_on(0,Alessa_plug_wq, &Alessa_plug_work,
 				msecs_to_jiffies(10));
 
