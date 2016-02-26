@@ -29,6 +29,7 @@
  * v1.2.1 Sampling rate tunable-
  * v1.3 Fix some endurance mode
  * Threshold are now tunable
+ * v1.3.1 Added switch to enable or disable hotplug
  */
 
 #include <linux/module.h>
@@ -42,6 +43,7 @@
 #define ALESSAPLUG "AlessaPlug"
 #define ALESSA_VERSION 1
 #define ALESSA_SUB_VERSION 3
+#define ALESSA_MAINTENANCE 1
 
 static int suspend_cpu_num = 2;
 static int resume_cpu_num = 3;
@@ -59,6 +61,8 @@ static int core_limit = 4;
 
 static int sampling_time = DEF_SAMPLING_MS;
 static int load_threshold = CPU_LOAD_THRESHOLD;
+
+static int alessa_HP_enabled = 1;//To enable or disable hotplug
 
 static struct workqueue_struct *Alessa_plug_wq;
 static struct delayed_work Alessa_plug_work;
@@ -203,6 +207,32 @@ static ssize_t __ref alessa_plug_sampling_store(struct kobject *kobj, struct kob
 	sscanf(buf, "%d", &val);
 	if(val > 50)
 		sampling_time = val;
+		return count;
+}
+
+static ssize_t alessa_plug_hp_enabled_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d", alessa_HP_enabled);
+}
+
+static ssize_t __ref alessa_plug_hp_enabled_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+
+	int val;
+	int last_val = alessa_HP_enabled;
+	sscanf(buf, "%d", &val);
+		switch(val)
+	{
+	case 0:
+	case 1:
+		alessa_HP_enabled = val;
+	default:
+		pr_info("AlessaPlug: invalid choice\n");
+
+	}
+
+	if(alessa_HP_enabled == 1 && alessa_HP_enabled != last_val)
+		queue_delayed_work_on(0, Alessa_plug_wq, &Alessa_plug_work, msecs_to_jiffies(sampling_time));
 	return count;
 }
 
@@ -224,7 +254,7 @@ static unsigned int get_curr_load(unsigned int cpu)//Current cpu load
 {
 	int ret;
 	unsigned int idle_time, wall_time;
-	unsigned int cur_load, load_max_freq;
+	unsigned int cur_load;
 	u64 cur_wall_time, cur_idle_time;
 	struct cpu_load_data *pcpu = &per_cpu(cpuload, cpu);
 	struct cpufreq_policy policy;
@@ -289,8 +319,11 @@ else if(cpu_online(i) && average_load[i] < load_threshold && cpu_online (i+1))
 		cpu_down(i+1);
 	}
 }
+	if(alessa_HP_enabled != 0)
 	queue_delayed_work_on(0,Alessa_plug_wq, &Alessa_plug_work,
 				msecs_to_jiffies(sampling_time));
+	else
+		cpu_online_all();
 }
 
 static void alessa_plug_suspend(struct power_suspend *h)
@@ -307,7 +340,7 @@ static void __ref alessa_plug_resume(struct power_suspend *h)//when you resume f
 
 static ssize_t alessa_plug_ver_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-       return sprintf(buf, "Alessa_Plug %u.%u", ALESSA_VERSION, ALESSA_SUB_VERSION);
+       return sprintf(buf, "Alessa_Plug %u.%u.%u", ALESSA_VERSION, ALESSA_SUB_VERSION, ALESSA_MAINTENANCE);
 }
 
 static struct kobj_attribute alessa_plug_ver_attribute =
@@ -335,6 +368,11 @@ static struct kobj_attribute alessa_plug_load_attribute =
 		0666,
 		alessa_plug_load, alessa_plug_load_store);
 
+static struct kobj_attribute alessa_plug_hp_enabled_attribute =
+	__ATTR(hotplug_enabled,
+		0666,
+		alessa_plug_hp_enabled_show, alessa_plug_hp_enabled_store);
+
 static struct attribute *alessa_plug_attrs[] =
     {
         &alessa_plug_ver_attribute.attr,
@@ -342,6 +380,7 @@ static struct attribute *alessa_plug_attrs[] =
 	&alessa_plug_endurance_attribute.attr,
 	&alessa_plug_sampling_attribute.attr,
 	&alessa_plug_load_attribute.attr,
+	&alessa_plug_hp_enabled_attribute.attr,
         NULL,
     };
 
