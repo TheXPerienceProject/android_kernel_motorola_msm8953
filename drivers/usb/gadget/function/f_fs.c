@@ -138,6 +138,9 @@ struct ffs_epfile {
 
 	unsigned char			_pad;
 	atomic_t			opened;
+
+	unsigned long			buf_len;
+	char				*buffer;
 };
 
 /*  ffs_io_data structure ***************************************************/
@@ -800,10 +803,11 @@ retry:
 		spin_unlock_irq(&epfile->ffs->eps_lock);
 
 		if (!io_data->read)
-			data = kmalloc(data_len + extra_buf_alloc,
-					GFP_KERNEL);
-		else
-			data = kmalloc(data_len, GFP_KERNEL);
+			data_len += extra_buf_alloc;
+
+		data = (data_len > epfile->buf_len || io_data->aio) ?
+			kmalloc(data_len, GFP_KERNEL) :
+			epfile->buffer;
 		if (unlikely(!data))
 			return -ENOMEM;
 		if (io_data->aio && !io_data->read) {
@@ -993,7 +997,8 @@ retry:
 					}
 				}
 			}
-			kfree(data);
+			if (data_len > epfile->buf_len || io_data->aio)
+				kfree(data);
 		}
 	}
 
@@ -1004,7 +1009,8 @@ error_lock:
 	spin_unlock_irq(&epfile->ffs->eps_lock);
 	mutex_unlock(&epfile->mutex);
 error:
-	kfree(data);
+	if (data_len > epfile->buf_len || io_data->aio)
+		kfree(data);
 	if (ret < 0)
 		pr_err_ratelimited("Error: returning %zd value\n", ret);
 	return ret;
@@ -1175,7 +1181,7 @@ static long ffs_epfile_ioctl(struct file *file, unsigned code,
 		return -ENODEV;
 
 	spin_lock_irq(&epfile->ffs->eps_lock);
-	if (likely(epfile->ep)) {
+	if (epfile->ep) {
 		switch (code) {
 		case FUNCTIONFS_FIFO_STATUS:
 			ret = usb_ep_fifo_status(epfile->ep->ep);
@@ -1213,11 +1219,29 @@ static long ffs_epfile_ioctl(struct file *file, unsigned code,
 				ret = -EFAULT;
 			return ret;
 		}
+		case FUNCTIONFS_ENDPOINT_ALLOC:
+			kfree(epfile->buffer);
+			epfile->buffer = NULL;
+			epfile->buf_len = value;
+			if (epfile->buf_len) {
+				epfile->buffer = kzalloc(epfile->buf_len,
+						GFP_KERNEL);
+				if (!epfile->buffer)
+					ret = -ENOMEM;
+			}
+			break;
+
 		default:
 			ret = -ENOTTY;
 		}
 	} else {
-		ret = -ENODEV;
+		switch (code) {
+		case FUNCTIONFS_ENDPOINT_ALLOC:
+			epfile->buf_len = value;
+			break;
+		default:
+			ret = -ENODEV;
+		}
 	}
 	spin_unlock_irq(&epfile->ffs->eps_lock);
 
@@ -1785,6 +1809,8 @@ static void ffs_func_eps_disable(struct ffs_function *func)
 			ep->ep->driver_data = NULL;
 		}
 		epfile->ep = NULL;
+		kfree(epfile->buffer);
+		epfile->buffer = NULL;
 
 		++ep;
 		++epfile;
@@ -1825,6 +1851,14 @@ static int ffs_func_eps_enable(struct ffs_function *func)
 
 		ep->ep->driver_data = ep;
 		ep->ep->desc = ds;
+		if (epfile->buf_len) {
+			epfile->buffer = kzalloc(epfile->buf_len,
+					GFP_KERNEL);
+			if (!epfile->buffer) {
+				ret = -ENOMEM;
+				break;
+			}
+		}
 
 		ret = config_ep_by_speed(func->gadget, &func->function, ep->ep);
 		if (ret) {
