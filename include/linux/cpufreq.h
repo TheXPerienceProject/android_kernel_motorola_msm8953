@@ -559,6 +559,9 @@ extern struct cpufreq_governor cpufreq_gov_schedutil;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_ALESSA)
 extern struct cpufreq_governor cpufreq_gov_alessa;
 #define CPUFREQ_DEFAULT_GOVERNOR (&cpufreq_gov_alessa)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_XPERIENCE)
+extern struct cpufreq_governor cpufreq_gov_xperience;
+#define CPUFREQ_DEFAULT_GOVERNOR 	(&cpufreq_gov_xperience)
 #endif
 
 static inline void cpufreq_policy_apply_limits(struct cpufreq_policy *policy)
