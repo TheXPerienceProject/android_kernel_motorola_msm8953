@@ -13,6 +13,7 @@ obj-$(CONFIG_CPU_FREQ_GOV_CONSERVATIVE)	+= cpufreq_conservative.o
 obj-$(CONFIG_CPU_FREQ_GOV_INTERACTIVE)	+= cpufreq_interactive.o
 obj-$(CONFIG_CPU_FREQ_GOV_COMMON)		+= cpufreq_governor.o
 obj-$(CONFIG_CPU_FREQ_GOV_ALESSA) 		+= cpufreq_alessa.o
+obj-$(CONFIG_CPU_FREQ_GOV_XPERIENCE)	+= cpufreq_xperience.o
 obj-$(CONFIG_CPU_BOOST)			+= cpu-boost.o
 
 obj-$(CONFIG_CPUFREQ_DT)		+= cpufreq-dt.o
