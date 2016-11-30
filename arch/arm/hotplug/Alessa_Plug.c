@@ -34,6 +34,7 @@
  * and introducing touch boost
  * v1.4.1 Fix some logic
  * v1.4.2 Add some cpu idle info required if aren't present on cpufreq.c
+ * v1.4.4 fix some logic
  */
 #include <asm/cputime.h>
 #include <linux/module.h>
@@ -51,7 +52,7 @@
 #define ALESSAPLUG "AlessaPlug"
 #define ALESSA_VERSION 1
 #define ALESSA_SUB_VERSION 4
-#define ALESSA_MAINTENANCE 2
+#define ALESSA_MAINTENANCE 4
 
 static int suspend_cpu_num = 2;
 static int resume_cpu_num = 3;
@@ -369,7 +370,7 @@ static ssize_t __ref alessa_plug_hp_enabled_store(struct kobject *kobj, struct k
 		alessa_HP_enabled = val;
 	break;
 	default:
-		pr_info("AlessaPlug: invalid choice\n");
+		pr_info("%s: invalid choice\n", ALESSAPLUG);
 	break;
 
 	}
@@ -471,16 +472,16 @@ static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
 	switch(endurance_level)
 {
 	case 0:
-		core_limit = 3;
+		core_limit = 4;
 	break;
 	case 1:
 		core_limit = 2;
 	break;
-	case 2:
-		core_limit = 0;
-	break;
+	/*case 2:
+		core_limit = 1;
+	break;*/
 	default:
-		core_limit = 3;
+		core_limit = 4;
 	break;
 	}
 	for(i=0; i < core_limit; i++){
