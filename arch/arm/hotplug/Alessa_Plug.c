@@ -36,6 +36,7 @@
  * v1.4.2 Add some cpu idle info required if aren't present on cpufreq.c
  * v1.4.4 fix some logic
  * v1.4.5 code cleanup
+ * v2.0.0 Improve hotplug algorithm
  */
 #include <asm/cputime.h>
 #include <linux/module.h>
@@ -51,9 +52,9 @@
 #include <linux/tick.h>
 
 #define ALESSAPLUG "AlessaPlug"
-#define ALESSA_VERSION 1
-#define ALESSA_SUB_VERSION 4
-#define ALESSA_MAINTENANCE 5
+#define ALESSA_VERSION 2
+#define ALESSA_SUB_VERSION 0
+#define ALESSA_MAINTENANCE 0
 
 //disable messages
 #define DEBUGMODE 0
@@ -67,6 +68,9 @@ static int core_limit = 4;
 #define CPU_LOAD_THRESHOLD    (65)
 
 #define DEF_SAMPLING_MS (500)
+
+//Define the min time of the cpu are up
+#define CPU_MIN_TIME_UP (750)
 
 static bool isSuspended = false;
 struct notifier_block lcd_worker;
@@ -87,6 +91,7 @@ static struct workqueue_struct *Alessa_plug_boost_wq;
 static struct delayed_work Alessa_plug_touch_boost;
 //CPU CHARGE
 static unsigned int last_load[4] ={0, 0, 0, 0};
+static int now[4], last_time[4];
 
 struct cpu_load_data{
 	u64 prev_cpu_idle;
@@ -477,16 +482,22 @@ static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
 	{
 		if(DEBUGMODE)
 	pr_info("%s: Bringing back cpu %d\n", ALESSAPLUG, i);
-		if(!((i+1) > 3))
-			cpu_up(i+1);
+		if(!((i+1) > 3)){
+					last_time[i+1] = ktime_to_ms(ktime_get());
+		cpu_up(i+1);
+
+		}
 }
 else if(cpu_online(i) && average_load[i] < load_threshold && cpu_online (i+1))
 {
-	if(DEBUGMODE)
-	pr_info("%s: offlining cpu %d\n", ALESSAPLUG, i);
-		if(!(i+1) == 0)
-		cpu_down(i+1);
-	}
+		if(DEBUGMODE)
+		pr_info("%s: offlining cpu %d\n", ALESSAPLUG, i);
+			if(!(i+1) == 0){
+		 			now[i+1] = ktime_to_ms(ktime_get());
+					if((now[i+1]-last_time[i+1]) > CPU_MIN_TIME_UP)
+						cpu_down(i+1);
+				}
+		}
 }
 	if(alessa_HP_enabled != 0 && !isSuspended)
 	queue_delayed_work_on(0,Alessa_plug_wq, &Alessa_plug_work,
