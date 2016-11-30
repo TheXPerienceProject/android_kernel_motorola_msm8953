@@ -35,6 +35,7 @@
  * v1.4.1 Fix some logic
  * v1.4.2 Add some cpu idle info required if aren't present on cpufreq.c
  * v1.4.4 fix some logic
+ * v1.4.5 code cleanup
  */
 #include <asm/cputime.h>
 #include <linux/module.h>
@@ -52,7 +53,7 @@
 #define ALESSAPLUG "AlessaPlug"
 #define ALESSA_VERSION 1
 #define ALESSA_SUB_VERSION 4
-#define ALESSA_MAINTENANCE 4
+#define ALESSA_MAINTENANCE 5
 
 static int suspend_cpu_num = 2;
 static int resume_cpu_num = 3;
@@ -60,10 +61,6 @@ static int endurance_level = 0;
 static int device_cpu = 4;
 static int core_limit = 4;
 
-/*#define CPU_UP_THRESHOLD      (65)
-#define CPU_DOWN_DIFFERENTIAL (10)
-#define CPU_UP_AVERAGE_TIME   (10)
-#define CPU_DOWN_AVERAGE_TIME (10)*/
 #define CPU_LOAD_THRESHOLD    (65)
 
 #define DEF_SAMPLING_MS (500)
@@ -74,7 +71,7 @@ static int sampling_time = DEF_SAMPLING_MS;
 static int load_threshold = CPU_LOAD_THRESHOLD;
 
 static int alessa_HP_enabled = 1;//To enable or disable hotplug
-static int touch_boost_enabled = 0;
+static int touch_boost_enabled = 0; //To enable Touch boost
 
 //Resume
 static struct workqueue_struct *Alessa_plug_resume_wq;
@@ -87,8 +84,6 @@ static struct workqueue_struct *Alessa_plug_boost_wq;
 static struct delayed_work Alessa_plug_touch_boost;
 //CPU CHARGE
 static unsigned int last_load[4] ={0, 0, 0, 0};
-
-
 
 struct cpu_load_data{
 	u64 prev_cpu_idle;
@@ -191,26 +186,6 @@ for(cpu = 1; cpu <= resume_cpu_num; cpu++)
 
 pr_info("%s: all cpu were online\n", ALESSAPLUG);
 }
-/*static inline void cpu_online_all(void) //All cpu's enabled
-{
-	unsigned int cpu;
-
-	for (cpu = 1; cpu < 4; cpu++) {//Check the 4 cores
-		if (cpu_is_offline(cpu))
-			cpu_up(cpu);
-	}
-
-	pr_info("%s: all cpus were onlined\n", ALESSAPLUG);
-}
-OLDER CODE*/
-/*
-info about ssize if you don't know what is it
-
-size_t comes from standard C,is an unsigned type used for sizes of objects.
-
-ssize_t comes from posix, is a signed type used for a count of bytes or
-an error indication
-*/
 
 //Code related to add touch boost support
 static void __ref alessa_plug_boost_work_fn(struct work_struct *work)
@@ -497,13 +472,13 @@ static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
 {
 	if(cpu_online(i) && average_load[i] > load_threshold && cpu_is_offline(i+1))
 	{
-	pr_info("Alessa Plug: Bringing back cpu %d\n",i);
+	pr_info("%s: Bringing back cpu %d\n",i, ALESSAPLUG);
 		if(!((i+1) > 3))
 			cpu_up(i+1);
 }
 else if(cpu_online(i) && average_load[i] < load_threshold && cpu_online (i+1))
 {
-	pr_info("Alessa Plug: offlining cpu %d\n",i);
+	pr_info("%s: offlining cpu %d\n",i, ALESSAPLUG);
 		if(!(i+1) == 0)
 		cpu_down(i+1);
 	}
@@ -536,13 +511,13 @@ static int lcd_notifier_callback(struct notifier_block *nb,
 				queue_delayed_work_on(0, Alessa_plug_resume_wq, &Alessa_plug_resume_work,
 			msecs_to_jiffies(10));
 
-		pr_info("Alessa Plug: resume called\n");
+		pr_info("%s: resume called\n", ALESSAPLUG);
 		break;
 		case LCD_EVENT_ON_END:
 		break;
 		case LCD_EVENT_OFF_START:
 			isSuspended = true;
-				pr_info("Alessa Plug: suspend called\n");
+				pr_info("%s: suspend called\n", ALESSAPLUG);
 		break;
 		default:
 		break;
@@ -666,14 +641,7 @@ static int __init alessa_plug_init(void)
         return ret;
 }
 
-/*static void __exit alessa_plug_exit(void)
-{
-	unregister_power_suspend(&alessa_plug_power_suspend_handler);
-
-}*/
-
 MODULE_LICENSE("GPL and additional rights");
-MODULE_AUTHOR("Carlos "klozz" Jesus <tsubaki.ayumi@gmail.com");
+MODULE_AUTHOR("Carlos "klozz" Jesus <klozz707@gmail.com");
 MODULE_DESCRIPTION("Hotplug driver for QuadCore CPU");
 late_initcall(alessa_plug_init);
-//module_exit(alessa_plug_exit);
