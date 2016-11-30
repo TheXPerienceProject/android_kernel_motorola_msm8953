@@ -55,6 +55,9 @@
 #define ALESSA_SUB_VERSION 4
 #define ALESSA_MAINTENANCE 5
 
+//disable messages
+#define DEBUGMODE 0
+
 static int suspend_cpu_num = 2;
 static int resume_cpu_num = 3;
 static int endurance_level = 0;
@@ -472,13 +475,15 @@ static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
 {
 	if(cpu_online(i) && average_load[i] > load_threshold && cpu_is_offline(i+1))
 	{
-	pr_info("%s: Bringing back cpu %d\n",i, ALESSAPLUG);
+		if(DEBUGMODE)
+	pr_info("%s: Bringing back cpu %d\n", ALESSAPLUG, i);
 		if(!((i+1) > 3))
 			cpu_up(i+1);
 }
 else if(cpu_online(i) && average_load[i] < load_threshold && cpu_online (i+1))
 {
-	pr_info("%s: offlining cpu %d\n",i, ALESSAPLUG);
+	if(DEBUGMODE)
+	pr_info("%s: offlining cpu %d\n", ALESSAPLUG, i);
 		if(!(i+1) == 0)
 		cpu_down(i+1);
 	}
