@@ -509,7 +509,8 @@ static int lcd_notifier_callback(struct notifier_block *nb,
 
 static ssize_t alessa_plug_ver_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-       return sprintf(buf, "Alessa_Plug %u.%u.%u", ALESSA_VERSION, ALESSA_SUB_VERSION, ALESSA_MAINTENANCE);
+//       return sprintf(buf, "Alessa_Plug %u.%u.%u", ALESSA_VERSION, ALESSA_SUB_VERSION, ALESSA_MAINTENANCE);
+       return sprintf(buf, "%u.%u.%u", ALESSA_VERSION, ALESSA_SUB_VERSION, ALESSA_MAINTENANCE);
 }
 
 static struct kobj_attribute alessa_plug_ver_attribute =
