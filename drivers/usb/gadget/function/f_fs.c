@@ -39,6 +39,7 @@
 #include "configfs.h"
 
 #define FUNCTIONFS_MAGIC	0xa647361 /* Chosen by a honest dice roll ;) */
+#define ENDPOINT_ALLOC_MAX	1 << 25 /* Max endpoint buffer size, 32 MB */
 
 /* Reference counter handling */
 static void ffs_data_get(struct ffs_data *ffs);
@@ -1213,6 +1214,10 @@ static long ffs_epfile_ioctl(struct file *file, unsigned code,
 		case FUNCTIONFS_ENDPOINT_ALLOC:
 			kfree(epfile->buffer);
 			epfile->buffer = NULL;
+			if (value > ENDPOINT_ALLOC_MAX) {
+				ret = -EINVAL;
+				break;
+			}
 			epfile->buf_len = value;
 			if (epfile->buf_len) {
 				epfile->buffer = kzalloc(epfile->buf_len,
@@ -1226,13 +1231,7 @@ static long ffs_epfile_ioctl(struct file *file, unsigned code,
 			ret = -ENOTTY;
 		}
 	} else {
-		switch (code) {
-		case FUNCTIONFS_ENDPOINT_ALLOC:
-			epfile->buf_len = value;
-			break;
-		default:
-			ret = -ENODEV;
-		}
+		ret = -ENODEV;
 	}
 	spin_unlock_irq(&epfile->ffs->eps_lock);
 
@@ -1799,8 +1798,6 @@ static void ffs_func_eps_disable(struct ffs_function *func)
 			ep->ep->driver_data = NULL;
 		}
 		epfile->ep = NULL;
-		kfree(epfile->buffer);
-		epfile->buffer = NULL;
 
 		++ep;
 		++epfile;
@@ -1841,14 +1838,6 @@ static int ffs_func_eps_enable(struct ffs_function *func)
 
 		ep->ep->driver_data = ep;
 		ep->ep->desc = ds;
-		if (epfile->buf_len) {
-			epfile->buffer = kzalloc(epfile->buf_len,
-					GFP_KERNEL);
-			if (!epfile->buffer) {
-				ret = -ENOMEM;
-				break;
-			}
-		}
 
 		ret = config_ep_by_speed(func->gadget, &func->function, ep->ep);
 		if (ret) {
