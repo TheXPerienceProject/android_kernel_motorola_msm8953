@@ -416,7 +416,7 @@ static void __exit cpufreq_gov_alessa_exit(void)
 	cpufreq_unregister_governor(&cpufreq_gov_alessa);
 }
 
-MODULE_AUTHOR("Carlos "klozz" Jesus TeamMEX@XDA-Develpers");
+MODULE_AUTHOR("Carlos "klozz" Jesus klozz707@gmail.com");
 MODULE_DESCRIPTION("'cpufreq_alessa' - A dynamic cpufreq governor for msm devices");
 MODULE_LICENSE("GPL");
 
