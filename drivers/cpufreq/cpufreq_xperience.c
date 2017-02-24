@@ -30,6 +30,8 @@
 #include <asm/cputime.h>
 #include <linux/powersuspend.h>
 
+#define cputime64_add(__a, __b) ((__a) + (__b))
+#define cputime64_sub(__a, __b) ((__a) - (__b))
 
 /******************** Tunable parameters: ********************/
 
