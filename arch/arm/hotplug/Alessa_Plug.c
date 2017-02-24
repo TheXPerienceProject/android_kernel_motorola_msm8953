@@ -522,32 +522,32 @@ static struct kobj_attribute alessa_plug_ver_attribute =
 
 static struct kobj_attribute alessa_plug_suspend_cpu_attribute =
        __ATTR(suspend_cpus,
-               0666,
+               0660,
                alessa_plug_suspend_cpu, alessa_plug_suspend_cpu_store);
 
 static struct kobj_attribute alessa_plug_endurance_attribute =
 	__ATTR(endurance_level,
-		0666,
+		0660,
 		alessa_plug_endurance, alessa_plug_endurance_store);
 
 static struct kobj_attribute alessa_plug_sampling_attribute =
 	__ATTR(sampling_rate,
-		0666,
+		0660,
 		alessa_plug_sampling, alessa_plug_sampling_store);
 
 static struct kobj_attribute alessa_plug_load_attribute =
 	__ATTR(load_threshold,
-		0666,
+		0660,
 		alessa_plug_load, alessa_plug_load_store);
 
 static struct kobj_attribute alessa_plug_hp_enabled_attribute =
 	__ATTR(hotplug_enabled,
-		0666,
+		0660,
 		alessa_plug_hp_enabled_show, alessa_plug_hp_enabled_store);
 
 static struct kobj_attribute alessa_plug_tb_enabled_attribute =
 	__ATTR(touch_boost,
-		0666,
+		0660,
 		alessa_plug_tb_enabled, alessa_plug_tb_enabled_store);
 
 static struct attribute *alessa_plug_attrs[] =
