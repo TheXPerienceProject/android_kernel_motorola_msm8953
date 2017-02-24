@@ -1,0 +1,7 @@
+config ALESSA_PLUG
+	bool "Enable plugging down/up of cores using LCD_Notify"
+	help
+	  This driver uses lcd notify to take down the cpu cores
+	  on a quad core device.
+	  Later this maybe be a reemplace of hotplug.
+
