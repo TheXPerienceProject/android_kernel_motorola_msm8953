@@ -92,3 +92,5 @@ obj-$(CONFIG_SENSORS_STML0XX) += stml0xx/
 # TODO: remove me b/62058353
 subdir-ccflags-y += \
 	-Wno-ignored-attributes
+
+obj-y += motorola/mods/greybus/
