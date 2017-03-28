@@ -94,3 +94,4 @@ subdir-ccflags-y += \
 	-Wno-ignored-attributes
 
 obj-y += motorola/mods/greybus/
+obj-y += motorola/mods/v4l2_hal/
