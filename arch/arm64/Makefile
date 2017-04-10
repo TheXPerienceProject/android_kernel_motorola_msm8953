@@ -17,7 +17,13 @@ GZFLAGS		:=-9
 
 KBUILD_DEFCONFIG := defconfig
 
+ifeq ($(cc-name),clang)
+# This is a workaround for https://bugs.llvm.org/show_bug.cgi?id=30792.
+# TODO: revert when this is fixed in LLVM.
+KBUILD_CFLAGS	+= -mno-implicit-float
+else
 KBUILD_CFLAGS	+= -mgeneral-regs-only
+endif
 KBUILD_CFLAGS	+= -fno-pic
 KBUILD_CFLAGS	+= $(call cc-option, -mpc-relative-literal-loads)
 
@@ -57,6 +63,7 @@ KASAN_SHADOW_OFFSET := $(shell printf "0x%08x00000000\n" $$(( \
 export	TEXT_OFFSET GZFLAGS
 
 core-y		+= arch/arm64/kernel/ arch/arm64/mm/
+core-$(CONFIG_ALESSA_PLUG)	+= arch/arm64/hotplug/
 core-$(CONFIG_NET) += arch/arm64/net/
 core-$(CONFIG_KVM) += arch/arm64/kvm/
 core-$(CONFIG_XEN) += arch/arm64/xen/
