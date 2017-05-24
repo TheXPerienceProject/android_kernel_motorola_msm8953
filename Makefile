@@ -420,6 +420,10 @@ KBUILD_CFLAGS   := -Wno-strict-prototypes -Wno-trigraphs \
 		   -Wno-array-bounds -Wno-maybe-uninitialized\
 		   -std=gnu89 $(CLANG_FLAGS) -w
 
+# TODO: remove me b/62057517
+KBUILD_CFLAGS += \
+	-Wno-gcc-compat \
+
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__ $(CLANG_FLAGS)
