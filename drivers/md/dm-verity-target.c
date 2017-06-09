@@ -514,8 +514,8 @@ static int verity_verify_io(struct dm_verity_io *io)
 			add_to_verified_cache(io, b);
 		}
 		else if (verity_fec_decode(v, io, DM_VERITY_BLOCK_TYPE_DATA,
-					   cur_block, NULL, &start) == 0)
-			add_to_verified_cache(io, b);
+					   io->block + b, NULL, &start) == 0)
+			continue;
 		else if (verity_handle_err(v, DM_VERITY_BLOCK_TYPE_DATA,
 					   cur_block))
 			return -EIO;
