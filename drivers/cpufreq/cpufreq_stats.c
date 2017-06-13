@@ -434,6 +434,8 @@ static void cpufreq_stats_update_policy_cpu(struct cpufreq_policy *policy)
 	if (old) {
 		kfree(old->time_in_state);
 		kfree(old);
+       } else {
+               return;
 	}
 
 	pr_debug("Updating stats_table for new_cpu %u from last_cpu %u\n",
