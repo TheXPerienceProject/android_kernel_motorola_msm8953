@@ -29,6 +29,22 @@
 #include <linux/of.h>
 #include <trace/events/power.h>
 
+static unsigned long oc_cpu_max_a53 = 2016000;
+static int __init cpufreq_read_oc_cpu(char *cpu_max_a53){
+
+       unsigned long khz_oc;
+       int ret;
+
+       ret = kstrtoul(cpu_max_a53, 0, &khz_oc);
+       if (ret)
+              return -EINVAL;
+
+       oc_cpu_max_a53 = khz_oc;
+       printk("cpu_max_a53=%lu\n", oc_cpu_max_a53);
+       return ret;
+}
+__setup("cpu_max_a53=", cpufreq_read_oc_cpu);
+
 static DEFINE_MUTEX(l2bw_lock);
 
 static struct clk *cpu_clk[NR_CPUS];
@@ -374,6 +390,11 @@ static struct cpufreq_frequency_table *cpufreq_parse_dt(struct device *dev,
 		 */
 		if (i > 0 && f <= ftbl[i-1].frequency)
 			break;
+
+		if (cpu < 4 && f > oc_cpu_max_a53) {
+			nf = i;
+			break;
+		}
 
 		ftbl[i].driver_data = i;
 		ftbl[i].frequency = f;
