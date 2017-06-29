@@ -391,7 +391,7 @@ static struct cpufreq_frequency_table *cpufreq_parse_dt(struct device *dev,
 		if (i > 0 && f <= ftbl[i-1].frequency)
 			break;
 
-		if (cpu < 4 && f > oc_cpu_max_a53) {
+		if ( f > oc_cpu_max_a53) {
 			nf = i;
 			break;
 		}
