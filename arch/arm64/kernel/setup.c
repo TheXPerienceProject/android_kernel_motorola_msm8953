@@ -64,6 +64,8 @@
 #include <asm/psci.h>
 #include <asm/efi.h>
 
+#include <asm/system_info.h>
+
 #include <soc/qcom/bootinfo.h>
 
 void __attribute__((weak)) mach_cpuinfo_show(struct seq_file *m, void *v);
