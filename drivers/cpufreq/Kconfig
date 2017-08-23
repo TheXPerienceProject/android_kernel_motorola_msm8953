@@ -94,8 +94,7 @@ config CPU_FREQ_DEFAULT_GOV_ALESSA
 	select CPU_FREQ_GOV_ALESSA
 	help
 	  'alessa' This driver adds a dynamic cpufreq policy governor.
-	  The governor does a periodic polling and changes frequency based on the
-      CPU utilization.
+	  The governor does a periodic polling and changes frequency based on the CPU utilization.
 
 config CPU_FREQ_DEFAULT_GOV_ONDEMAND
 	bool "ondemand"
