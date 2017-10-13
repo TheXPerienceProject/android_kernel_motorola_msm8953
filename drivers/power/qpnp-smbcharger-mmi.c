@@ -120,6 +120,12 @@ enum bsw_modes {
 	BSW_DONE,
 };
 
+enum turbo_ebsrc {
+	TURBO_EBSRC_UNKNOWN,
+	TURBO_EBSRC_NOT_SUPPORTED,
+	TURBO_EBSRC_VALID,
+};
+
 static char *bsw_str[] = {
 	[BSW_OFF]		= "OFF",
 	[BSW_RUN]		= "RUNNING",
@@ -436,6 +442,8 @@ struct smbchg_chip {
 	struct wakeup_source		smbchg_hb_wake_source;
 	struct alarm			smbchg_heartbeat_alarm;
 	enum power_supply_type		supply_type;
+	enum turbo_ebsrc		turbo_pwr_ebsrc;
+	bool				check_ebsrc_vl;
 };
 
 static struct smbchg_chip *the_chip;
@@ -4218,6 +4226,7 @@ static int smbchg_usbeb_set_property(struct power_supply *psy,
 }
 
 #define EB_RCV_NEVER BIT(7)
+#define EB_SND_EXT BIT(2)
 #define EB_SND_LOW BIT(1)
 #define EB_SND_NEVER BIT(0)
 static void smbchg_check_extbat_ability(struct smbchg_chip *chip, char *able)
@@ -4282,7 +4291,8 @@ static void smbchg_check_extbat_ability(struct smbchg_chip *chip, char *able)
 			*able |= EB_SND_NEVER;
 		else if (ret.intval == POWER_SUPPLY_PTP_INT_SND_LOW_BATT_SAVER)
 			*able |= EB_SND_LOW;
-	}
+	} else if (ret.intval == POWER_SUPPLY_PTP_POWER_AVAILABLE_EXTERNAL)
+		*able |= EB_SND_EXT;
 
 	power_supply_put(eb_pwr_psy);
 }
@@ -4310,6 +4320,7 @@ static void smbchg_set_extbat_in_cl(struct smbchg_chip *chip)
 	power_supply_put(eb_pwr_psy);
 }
 
+static int eb_attach_stop_soc = 100;
 static void smbchg_get_extbat_out_cl(struct smbchg_chip *chip)
 {
 	int rc;
@@ -4320,6 +4331,7 @@ static void smbchg_get_extbat_out_cl(struct smbchg_chip *chip)
 	int dcin_len = chip->tables.dc_ilim_ma_len - 1;
 	int dcin_min_ma = chip->tables.dc_ilim_ma_table[0];
 	int dcin_max_ma = chip->tables.dc_ilim_ma_table[dcin_len];
+        bool ebsrc_max, wls_src_max;
 
 	if (!eb_pwr_psy || !eb_pwr_psy->get_property) {
 		chip->cl_ebsrc = 0;
@@ -4341,9 +4353,18 @@ static void smbchg_get_extbat_out_cl(struct smbchg_chip *chip)
 		} else if (ret.intval > dcin_max_ma)
 			ret.intval = dcin_max_ma;
 
+		wls_src_max = (is_wls_present(chip) &&
+			       (chip->vo_ebsrc > 5000));
+		ebsrc_max =
+			((chip->turbo_pwr_ebsrc == TURBO_EBSRC_VALID) &&
+			 ((eb_attach_stop_soc == 100) ||
+			  is_wls_present(chip)));
+
 		if (ret.intval == 0)
 			chip->cl_ebsrc = 0;
 		else if ((ret.intval < chip->dc_ebmax_current_ma) ||
+			 ebsrc_max ||
+			 wls_src_max ||
 			 is_usbeb_present(chip))
 			  chip->cl_ebsrc = ret.intval;
 		else
@@ -4368,6 +4389,24 @@ static void smbchg_get_extbat_in_vl(struct smbchg_chip *chip)
 	if (!eb_pwr_psy || !eb_pwr_psy->get_property) {
 		chip->vi_ebsrc = 0;
 		return;
+	}
+
+	if (chip->turbo_pwr_ebsrc == TURBO_EBSRC_UNKNOWN) {
+		rc = eb_pwr_psy->get_property(eb_pwr_psy,
+					 POWER_SUPPLY_PROP_PTP_POWER_SOURCE,
+					      &ret);
+
+		switch (ret.intval) {
+		case POWER_SUPPLY_PTP_POWER_SOURCE_NONE_TURBO:
+		case POWER_SUPPLY_PTP_POWER_SOURCE_BATTERY_TURBO:
+		case POWER_SUPPLY_PTP_POWER_SOURCE_WIRED_TURBO:
+		case POWER_SUPPLY_PTP_POWER_SOURCE_WIRELESS_TURBO:
+			chip->turbo_pwr_ebsrc = TURBO_EBSRC_VALID;
+			break;
+		default:
+			chip->turbo_pwr_ebsrc = TURBO_EBSRC_NOT_SUPPORTED;
+			break;
+		}
 	}
 
 	rc = eb_pwr_psy->get_property(eb_pwr_psy,
@@ -4478,6 +4517,7 @@ static int smbchg_get_extbat_state(struct smbchg_chip *chip, int *state)
 
 	if (!eb_pwr_psy || !eb_pwr_psy->get_property) {
 		*state = EB_DISCONN;
+                chip->turbo_pwr_ebsrc = TURBO_EBSRC_UNKNOWN;
 		return 0;
 	}
 
@@ -4551,7 +4591,7 @@ static void smbchg_set_extbat_state(struct smbchg_chip *chip,
 		if (rc < 0)
 			SMB_ERR(chip,
 				"Couldn't set 9V USBC Voltage rc=%d\n", rc);
-
+                chip->turbo_pwr_ebsrc = TURBO_EBSRC_UNKNOWN;
 		chip->ebchg_state = EB_DISCONN;
 		return;
 	}
@@ -4623,6 +4663,11 @@ static void smbchg_set_extbat_state(struct smbchg_chip *chip,
 		}
 		break;
 	case EB_SRC:
+		if (!(ability & EB_SND_EXT) && (eb_attach_stop_soc != 100))
+			chip->vl_ebsrc = USBC_5V_MODE;
+		else
+			chip->vl_ebsrc = USBC_9V_MODE;
+
 		smbchg_set_extbat_out_vl(chip);
 		ret.intval = POWER_SUPPLY_PTP_CURRENT_TO_PHONE;
 		rc = eb_pwr_psy->set_property(eb_pwr_psy,
@@ -5013,7 +5058,10 @@ static void smbchg_rate_check(struct smbchg_chip *chip)
 	};
 
 	if (!is_usb_present(chip)) {
-		if (is_usbeb_present(chip)) {
+		if ((chip->ebchg_state != EB_DISCONN) &&
+		    (chip->turbo_pwr_ebsrc == TURBO_EBSRC_VALID))
+			chip->charger_rate = POWER_SUPPLY_CHARGE_RATE_TURBO;
+		else if (is_usbeb_present(chip)) {
 			 if (chip->cl_ebsrc >= TURBO_CHRG_THRSH)
 				 chip->charger_rate =
 					 POWER_SUPPLY_CHARGE_RATE_TURBO;
@@ -10504,13 +10552,19 @@ static int bsw_ramp_up(struct smbchg_chip *chip)
 #define HEARTBEAT_EB_MS 1000
 static int set_eb_param(const char *val, const struct kernel_param *kp)
 {
-	int rv = param_set_int(val, kp);
+	int prev_attach_stop_soc;
+	int rv;
+
+	prev_attach_stop_soc = eb_attach_stop_soc;
+	rv = param_set_int(val, kp);
 	if (rv)
 		return rv;
 
 	if (the_chip) {
 		the_chip->update_eb_params++;
 		smbchg_stay_awake(the_chip, PM_HEARTBEAT);
+		the_chip->check_ebsrc_vl = (eb_attach_stop_soc !=
+					    prev_attach_stop_soc);
 		cancel_delayed_work(&the_chip->heartbeat_work);
 		schedule_delayed_work(&the_chip->heartbeat_work,
 				      msecs_to_jiffies(HEARTBEAT_EB_MS));
@@ -10530,7 +10584,6 @@ static int eb_rechrg_stop_soc = 80;
 module_param_cb(eb_rechrg_stop_soc, &eb_ops, &eb_rechrg_stop_soc, 0644);
 static int eb_attach_start_soc = 100;
 module_param_cb(eb_attach_start_soc, &eb_ops, &eb_attach_start_soc, 0644);
-static int eb_attach_stop_soc = 100;
 module_param_cb(eb_attach_stop_soc, &eb_ops, &eb_attach_stop_soc, 0644);
 static int eb_low_start_soc = 16;
 module_param_cb(eb_low_start_soc, &eb_ops, &eb_low_start_soc, 0644);
@@ -10678,12 +10731,15 @@ static void smbchg_heartbeat_work(struct work_struct *work)
 	int pmi_max_chrg_ma;
 	bool bsw_chrg_alarm;
 	bool max_chrg_alarm;
+	int dcin_mv;
 	int prev_dcin_curr_ma = chip->dc_target_current_ma;
 	bool prev_usbeb_pres = chip->usbeb_present;
 	int pwr_ext;
 	bool eb_sink_to_off = false;
 	bool extra_in_pwr = (chip->max_usbin_ma > 0) && (chip->cl_usbc >
 							 chip->max_usbin_ma);
+
+        int prev_vl_ebsrc = chip->vl_ebsrc;
 
 	if (!atomic_read(&chip->hb_ready))
 		return;
@@ -10740,6 +10796,17 @@ static void smbchg_heartbeat_work(struct work_struct *work)
 	else
 		smbchg_relax(chip, PM_WIRELESS);
 
+	if ((chip->ebchg_state == EB_SRC) && chip->check_ebsrc_vl) {
+		if (!(eb_able & EB_SND_EXT) && (eb_attach_stop_soc != 100))
+			chip->vl_ebsrc = USBC_5V_MODE;
+		else
+			chip->vl_ebsrc = USBC_9V_MODE;
+
+		if (prev_vl_ebsrc != chip->vl_ebsrc)
+			smbchg_set_extbat_out_vl(chip);
+	}
+	chip->check_ebsrc_vl = false;
+
 	if (chip->usb_present || chip->wls_present || !chip->usbeb_present)
 		smbchg_enable_dc_aicl(chip, false);
 	else if (chip->usbeb_present && !prev_usbeb_pres)
@@ -10767,8 +10834,8 @@ static void smbchg_heartbeat_work(struct work_struct *work)
 	bsw_chrg_alarm = check_bswchg_volt(chip);
 	max_chrg_alarm = check_maxbms_volt(chip);
 
-	smbchg_get_extbat_out_cl(chip);
 	smbchg_get_extbat_out_volt(chip);
+	smbchg_get_extbat_out_cl(chip);
 
 	if ((chip->enable_charging_limit) && (chip->is_factory_image))
 		update_charging_limit_modes(chip, batt_soc);
@@ -10804,6 +10871,7 @@ static void smbchg_heartbeat_work(struct work_struct *work)
 					smbchg_set_extbat_state(chip, EB_SRC,
 								false);
 			} else if ((eb_able & EB_SND_NEVER) ||
+                                   (eb_able & EB_SND_EXT) ||
 				   (eb_on_sw == 0))
 				smbchg_set_extbat_state(chip, EB_OFF, false);
 			else if (eb_able & EB_SND_LOW) {
@@ -10836,6 +10904,12 @@ static void smbchg_heartbeat_work(struct work_struct *work)
 		chip->dc_target_current_ma = chip->cl_ebsrc;
 	else
 		chip->dc_target_current_ma = chip->dc_ebmax_current_ma;
+
+	rc = smbchg_check_dcin_voltage(chip, &dcin_mv);
+	if (rc == -EINVAL) {
+		dcin_mv = 0;
+		SMB_WARN(chip, "Failed to get DCIN\n");
+	}
 
 	prev_step = chip->stepchg_state;
 
@@ -11123,6 +11197,11 @@ static void smbchg_heartbeat_work(struct work_struct *work)
 			chip->stepchg_max_voltage_mv - STEPCHG_FULL_FV_COMP;
 		set_max_allowed_current_ma(chip,
 					   chip->stepchg_steps[index].max_ma);
+		/* Don't Pull more Power from MOD interface then needed */
+		if (chip->stepchg_steps[index].max_ma <=
+		    chip->dc_target_current_ma)
+			chip->dc_target_current_ma =
+				chip->stepchg_steps[index].max_ma;
 		break;
 	case STEP_FIRST ... STEP_LAST:
 		if (!smbchg_parallel_en)
@@ -11169,6 +11248,11 @@ static void smbchg_heartbeat_work(struct work_struct *work)
 			chip->stepchg_steps[index].max_mv + STEPCHG_MAX_FV_COMP;
 		set_max_allowed_current_ma(chip,
 					   chip->stepchg_steps[index].max_ma);
+		/* Don't Pull more Power from MOD interface then needed */
+		if (chip->stepchg_steps[index].max_ma <=
+		    chip->dc_target_current_ma)
+			chip->dc_target_current_ma =
+				chip->stepchg_steps[index].max_ma;
 		break;
 	case STEP_NONE:
 		index = STEP_END(chip->stepchg_num_steps);
@@ -11182,6 +11266,11 @@ static void smbchg_heartbeat_work(struct work_struct *work)
 	default:
 		break;
 	}
+
+	if ((chip->dc_target_current_ma > 1600) &&
+	    (chip->vl_ebsrc >= USBC_9V_MODE) &&
+	    (dcin_mv > (USBC_5V_MODE + 500)))
+		chip->dc_target_current_ma = 1600;
 
 	if (chip->dc_target_current_ma != prev_dcin_curr_ma)
 		smbchg_set_thermal_limited_dc_current_max(chip,
@@ -11597,7 +11686,8 @@ static int smbchg_probe(struct spmi_device *spmi)
 	chip->hvdcp3_confirmed = false;
 	chip->usbc_disabled = false;
 	chip->fg_ready = false;
-	chip->vl_ebsrc = USBC_9V_MODE + 500;
+	chip->vl_ebsrc = USBC_9V_MODE;
+	chip->check_ebsrc_vl = false;
 	chip->bsw_volt_min_mv = -EINVAL;
 	chip->is_factory_image = false;
 	chip->charging_limit_modes = CHARGING_LIMIT_UNKNOWN;

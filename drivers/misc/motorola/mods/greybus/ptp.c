@@ -17,6 +17,7 @@
 #include <linux/sysfs.h>
 
 #include "greybus.h"
+#include "greybus_protocols.h"
 
 struct gb_ptp {
 	struct gb_connection	*connection;
