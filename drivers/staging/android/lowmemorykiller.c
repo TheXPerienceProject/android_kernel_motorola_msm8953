@@ -45,10 +45,13 @@
 #define CREATE_TRACE_POINTS
 #include "trace/lowmemorykiller.h"
 
+
 /* to enable lowmemorykiller */
 static int enable_lmk = 1;
 module_param_named(enable_lmk, enable_lmk, int,
 	S_IRUGO | S_IWUSR);
+extern int extra_free_kbytes;
+
 
 extern int extra_free_kbytes;
 
