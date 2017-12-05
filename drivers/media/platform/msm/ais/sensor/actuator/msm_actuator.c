@@ -543,7 +543,6 @@ static int32_t msm_actuator_piezo_move_focus(
 		return -EFAULT;
 	}
 
-
 	if (a_ctrl->i2c_reg_tbl == NULL) {
 		pr_err("failed. i2c reg tabl is NULL");
 		return -EFAULT;
