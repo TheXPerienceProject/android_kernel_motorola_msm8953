@@ -284,9 +284,15 @@ static void muc_handle_detection(bool force_removal)
 		/* Select SPI/I2C based on CLK signal */
 		if (gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
 			pr_info("%s: I2C selected\n", __func__);
+#ifdef CONFIG_MODS_2ND_GEN
+			muc_seq(cdata, cdata->select_i2c_seq, cdata->select_i2c_seq_len);
+#endif
 			muc_register_i2c();
 		} else {
 			pr_info("%s: SPI selected\n", __func__);
+#ifdef CONFIG_MODS_2ND_GEN
+			muc_seq(cdata, cdata->select_spi_seq, cdata->select_spi_seq_len);
+#endif
 			muc_register_spi();
 		}
 
@@ -701,6 +707,26 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 			__func__, __LINE__);
 		goto free_attach_wq;
 	}
+
+#ifdef CONFIG_MODS_2ND_GEN
+	cdata->select_spi_seq_len = ARRAY_SIZE(cdata->select_spi_seq);
+	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-select-spi-seq",
+		cdata->select_spi_seq, &cdata->select_spi_seq_len);
+	if (ret) {
+		dev_err(dev, "%s:%d failed to read muc-ctrl-select-spi-seq sequence.\n",
+			__func__, __LINE__);
+		goto free_attach_wq;
+	}
+
+	cdata->select_i2c_seq_len = ARRAY_SIZE(cdata->select_i2c_seq);
+	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-select-i2c-seq",
+		cdata->select_i2c_seq, &cdata->select_i2c_seq_len);
+	if (ret) {
+		dev_err(dev, "%s:%d failed to read muc-ctrl-select-i2c-seq sequence.\n",
+			__func__, __LINE__);
+		goto free_attach_wq;
+	}
+#endif
 
 	/* Force Flash Sequences (mod core dependent) */
 	cdata->ff_seq_v1_len = ARRAY_SIZE(cdata->ff_seq_v1);
