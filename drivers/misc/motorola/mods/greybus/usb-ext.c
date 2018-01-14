@@ -17,6 +17,9 @@
 #include <linux/mods/usb_ext_bridge.h>
 
 #include "greybus.h"
+#include "greybus_protocols.h"
+
+#define GB_USB_EXT_PROTOCOL_DUAL     0x02
 
 struct gb_usb_ext_data {
 	uint8_t protocol;
@@ -76,7 +79,7 @@ static int gb_usb_ext_handle_attach(struct gb_operation *operation)
 		status.proto = USB_EXT_PROTO_3_1;
 		break;
 	case GB_USB_EXT_PROTOCOL_DUAL:
-		status.proto = USB_EXT_PROTO_DUAL;
+		status.proto = 0x02;
 		break;
 	default:
 		status.proto = USB_EXT_PROTO_3_1;
