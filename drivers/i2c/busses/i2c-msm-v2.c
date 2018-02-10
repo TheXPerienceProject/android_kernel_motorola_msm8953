@@ -36,7 +36,6 @@
 #include <linux/msm-bus.h>
 #include <linux/msm-bus-board.h>
 #include <linux/i2c/i2c-msm-v2.h>
-#include <linux/ipc_logging.h>
 
 #ifdef DEBUG
 static const enum msm_i2_debug_level DEFAULT_DBG_LVL = MSM_DBG;
@@ -2114,7 +2113,6 @@ static int i2c_msm_xfer_wait_for_completion(struct i2c_msm_ctrl *ctrl,
 	time_left = wait_for_completion_timeout(complete,
 						xfer->timeout);
 	if (!time_left) {
-		ipc_log_string(ctrl->ipcl, "%s Timeout on I2C transfer\n", __func__);
 		xfer->err = I2C_MSM_ERR_TIMEOUT;
 		i2c_msm_dbg_dump_diag(ctrl, false, 0, 0);
 		ret = -EIO;
@@ -2297,7 +2295,6 @@ static int i2c_msm_pm_xfer_start(struct i2c_msm_ctrl *ctrl)
 		i2c_msm_pm_resume(ctrl->dev);
 	}
 
-	ipc_log_string(ctrl->ipcl, "%s Turning ON the I2C clocks\n", __func__);
 	ret = i2c_msm_pm_clk_enable(ctrl);
 	if (ret) {
 		mutex_unlock(&ctrl->xfer.mtx);
@@ -2325,7 +2322,6 @@ static void i2c_msm_pm_xfer_end(struct i2c_msm_ctrl *ctrl)
 	if (ctrl->xfer.mode_id == I2C_MSM_XFER_MODE_DMA)
 		i2c_msm_dma_free_channels(ctrl);
 
-	ipc_log_string(ctrl->ipcl, "%s Turning OFF the I2C clocks\n", __func__);
 	i2c_msm_pm_clk_disable(ctrl);
 
 	if (!pm_runtime_enabled(ctrl->dev))
@@ -2786,7 +2782,6 @@ static void i2c_msm_pm_suspend(struct device *dev)
 		return;
 	}
 	i2c_msm_dbg(ctrl, MSM_DBG, "suspending...");
-	ipc_log_string(ctrl->ipcl, "%s Clock path unvoting and unprepare.\n", __func__);
 	i2c_msm_pm_clk_unprepare(ctrl);
 	i2c_msm_clk_path_unvote(ctrl);
 
@@ -2808,18 +2803,11 @@ static int i2c_msm_pm_resume(struct device *dev)
 {
 	struct i2c_msm_ctrl *ctrl = dev_get_drvdata(dev);
 
-	if (!ctrl->ipcl) {
-		char ipc_name[I2C_NAME_SIZE];
-
-		snprintf(ipc_name, I2C_NAME_SIZE, "i2c-%d", ctrl->adapter.nr);
-		ctrl->ipcl = ipc_log_context_create(2, ipc_name, 0);
-	}
 	if (ctrl->pwr_state == I2C_MSM_PM_RT_ACTIVE)
 		return 0;
 
 	i2c_msm_dbg(ctrl, MSM_DBG, "resuming...");
 
-	ipc_log_string(ctrl->ipcl, "%s Clock path voting and prepare.\n", __func__);
 	i2c_msm_clk_path_vote(ctrl);
 	i2c_msm_pm_clk_prepare(ctrl);
 	ctrl->pwr_state = I2C_MSM_PM_RT_ACTIVE;
@@ -3063,8 +3051,6 @@ static int i2c_msm_remove(struct platform_device *pdev)
 	pm_runtime_disable(ctrl->dev);
 	/* no one can call a xfer after the next line */
 	i2c_msm_frmwrk_unreg(ctrl);
-	if (ctrl->ipcl)
-		ipc_log_context_destroy(ctrl->ipcl);
 	mutex_unlock(&ctrl->xfer.mtx);
 	mutex_destroy(&ctrl->xfer.mtx);
 
