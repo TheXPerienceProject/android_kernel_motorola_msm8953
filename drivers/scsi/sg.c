@@ -1792,13 +1792,7 @@ sg_start_req(Sg_request *srp, unsigned char *cmd)
 	if (md) {
 		if (!sg_res_in_use(sfp) && dxfer_len <= rsv_schp->bufflen)
 			sg_link_reserve(sfp, srp, dxfer_len);
-		} else if (hp->flags & SG_FLAG_MMAP_IO) {
-			res = -EBUSY; /* sfp->res_in_use == 1 */
-			if (dxfer_len > rsv_schp->bufflen)
-				res = -ENOMEM;
-			mutex_unlock(&sfp->f_mutex);
-			return res;
-		} else {
+		else {
 			res = sg_build_indirect(req_schp, sfp, dxfer_len);
 			if (res)
 				return res;
