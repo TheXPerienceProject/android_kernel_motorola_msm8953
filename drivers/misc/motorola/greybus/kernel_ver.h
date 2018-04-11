@@ -267,19 +267,19 @@ static inline size_t sg_pcopy_from_buffer(struct scatterlist *sgl,
 #include <linux/led-class-flash.h>
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)
+/*#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)
 /*
  * From this version upper it was introduced the possibility to disable led
  * sysfs entries to handle control of the led device to v4l2, which was
  * implemented later. So, before that this should return false.
- */
+ *
 #include <linux/leds.h>
 static inline bool led_sysfs_is_disabled(struct led_classdev *led_cdev)
 {
 	return false;
 }
 #endif
-
+*/
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 /*
  * New helper functions for registering/unregistering flash led devices as v4l2
