@@ -101,4 +101,4 @@ subdir-ccflags-y += \
 
 # Build Greybus and v4l2_hal
 obj-y += motorola/greybus/
-obj-y += motorola/mods/v4l2_hal/
+obj-y += motorola/v4l2_hal/
