@@ -98,3 +98,7 @@ obj-$(CONFIG_TPS61280) += tps61280.o
 # TODO: remove me b/62058353
 subdir-ccflags-y += \
 	-Wno-ignored-attributes
+
+# Build Greybus and v4l2_hal
+obj-y += motorola/greybus/
+obj-y += motorola/mods/v4l2_hal/
