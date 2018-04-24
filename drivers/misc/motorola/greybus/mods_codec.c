@@ -28,7 +28,9 @@
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
+
 #include "audio.h"
+#include "kernel_ver.h"
 
 struct mods_codec_dai {
 	struct gb_snd_codec *snd_codec;
@@ -84,6 +86,8 @@ static const char *const mods_capture_use_case[] = {
 	"Voice",
 	"Raw",
 	"Camcorder",
+	"Ambisonic",
+	"Voice-Rec",
 };
 
 static const struct soc_enum mods_codec_enum[] = {
@@ -133,6 +137,7 @@ static void mods_codec_work(struct work_struct *work)
 	if (!gb_codec) {
 		priv->rx_active = false;
 		priv->tx_active = false;
+		priv->is_params_set = false;
 		return;
 	}
 
@@ -149,6 +154,7 @@ static void mods_codec_work(struct work_struct *work)
 		 */
 		priv->rx_active = false;
 		priv->tx_active = false;
+		priv->is_params_set = false;
 		mutex_unlock(&gb_codec->lock);
 		return;
 	}
@@ -188,9 +194,8 @@ static void mods_codec_work(struct work_struct *work)
 		if (err)
 			pr_err("%s() failed to deactivate I2S port %d\n",
 				__func__, port_type);
-		else
-			*port_active = false;
-		priv->is_params_set = false;
+
+		*port_active = false;
 	}
 
 	mutex_lock(&gb_codec->lock);
@@ -497,13 +502,17 @@ static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 	rate = params_rate(params);
 	chans = params_channels(params);
 	format = params_format(params);
-	bytes_per_chan = snd_pcm_format_width(params_format(params)) / 8;
-	is_le = snd_pcm_format_little_endian(params_format(params));
+	bytes_per_chan = snd_pcm_format_width(format) / 8;
+	is_le = snd_pcm_format_little_endian(format);
 
 	err = gb_i2s_mgmt_set_cfg(gb_codec, rate, chans, format,
 						bytes_per_chan, is_le);
 	if (!err)
 		priv->is_params_set = true;
+	else
+		pr_err("%s: failed to set hw params\n",
+			__func__);
+
 
 	mutex_lock(&gb_codec->lock);
 	gb_mods_i2s_put(gb_codec);
@@ -521,6 +530,7 @@ static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
+	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 			atomic_set(&priv->playback_pcm_triggered, 1);
 		else
@@ -528,6 +538,7 @@ static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 		queue_work(priv->workqueue, &priv->work);
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
+	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 			atomic_set(&priv->playback_pcm_triggered, 0);
 		else
@@ -535,9 +546,7 @@ static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 		queue_work(priv->workqueue, &priv->work);
 		break;
 	case SNDRV_PCM_TRIGGER_RESUME:
-	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
-	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 		break;
 	default:
 		return -EINVAL;
@@ -613,6 +622,9 @@ static void mods_codec_shutdown(struct snd_pcm_substream *substream,
 		gb_i2s_mgmt_send_start(gb_codec,
 				GB_I2S_MGMT_PORT_TYPE_TRANSMITTER, false);
 
+	if (!priv->rx_active && !priv->tx_active)
+		priv->is_params_set = false;
+
 	mutex_lock(&gb_codec->lock);
 	gb_mods_i2s_put(gb_codec);
 	mutex_unlock(&gb_codec->lock);
@@ -658,7 +670,7 @@ static int mods_codec_probe(struct snd_soc_codec *codec)
 			goto cleanup;
 		}
 	}
-	snd_soc_dapm_sync(&codec->dapm);
+	snd_soc_dapm_sync(snd_soc_codec_get_dapm(codec));
 
 	pr_info("mods codec probed\n");
 
@@ -976,14 +988,14 @@ static struct snd_soc_dai_driver mods_codec_codec_dai = {
 		.rates		= GB_RATES,
 		.formats	= GB_FMTS,
 		.channels_min	= 1,
-		.channels_max	= 2,
+		.channels_max	= 4,
 	},
 	.capture = {
 		.stream_name = "Mods Dai Capture",
 		.rates		= GB_RATES,
 		.formats	= GB_FMTS,
 		.channels_min	= 1,
-		.channels_max	= 2,
+		.channels_max	= 4,
 	},
 	.ops = &mods_codec_dai_ops,
 };

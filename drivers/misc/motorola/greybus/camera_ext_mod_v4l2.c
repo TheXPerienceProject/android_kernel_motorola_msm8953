@@ -40,6 +40,7 @@
 
 #include "camera_ext.h"
 #include "connection.h"
+#include "kernel_ver.h"
 
 #define CAM_EXT_CTRL_NUM_HINT   100
 #define MAX_RETRY_TIMES         50
@@ -305,7 +306,7 @@ int camera_ext_mod_v4l2_buffer_notify(struct camera_ext *cam_dev,
 	return 0;
 }
 
-static int camera_ext_queue_setup(struct vb2_queue *q,
+static int _camera_ext_queue_setup(struct vb2_queue *q,
 	const struct v4l2_format *fmt,
 	unsigned int *num_buffers, unsigned int *num_planes,
 	unsigned int sizes[], void *alloc_ctxs[])
@@ -317,6 +318,21 @@ static int camera_ext_queue_setup(struct vb2_queue *q,
 
 	return 0;
 }
+
+#ifdef V4L2_VIDEOBUF2_VOID_FORMAT
+static int camera_ext_queue_setup(struct vb2_queue *q,
+	const void *parg,
+	unsigned int *num_buffers, unsigned int *num_planes,
+	unsigned int sizes[], void *alloc_ctxs[])
+{
+	const struct v4l2_format *fmt = parg;
+
+	return _camera_ext_queue_setup(q, fmt, num_buffers,
+				num_planes, sizes, alloc_ctxs);
+}
+#else
+#define camera_ext_queue_setup _camera_ext_queue_setup
+#endif
 
 static void camera_ext_buf_queue(struct vb2_buffer *vb)
 {
@@ -384,7 +400,6 @@ static int camera_ext_vb2_q_init(struct camera_ext *cam_dev,
 
 	q->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	q->io_modes = VB2_MMAP;
-	q->io_flags = 0;
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	q->buf_struct_size = sizeof(struct vb2_metadata_buffer);
 
@@ -409,7 +424,7 @@ static int request_bufs(struct file *file, void *fh,
 	INIT_LIST_HEAD(&g_v4l2_data->strm.available_buffers);
 
 	ret = vb2_reqbufs(q, req);
-	g_v4l2_data->buf_requested = ret ? false : true;
+	g_v4l2_data->buf_requested = (req->count > 0 && ret == 0);
 
 	mutex_unlock(&g_v4l2_data->mod_mutex);
 
@@ -542,8 +557,20 @@ static int mod_v4l2_open(struct file *file)
 			rc = -EBUSY;
 			goto err_open;
 		}
-
-		goto user_present;
+		else if (g_v4l2_data->open_mode == mode) {
+			goto user_present;
+		}
+		else if (CAMERA_EXT_BOOTMODE_PREVIEW == g_v4l2_data->open_mode) {
+			// it is in preview mode and no change should be made
+			pr_warn("%s: already in preview mode\n", __func__);
+			rc = -EBUSY;
+			goto err_open;
+		}
+		/* MOD has been opened by other user in different mode.
+		 * Powered it off first and reopen it in the new mode.
+		 */
+		pr_warn("%s: close previous instance\n", __func__);
+		gb_camera_ext_power_off(cam_dev->connection);
 	}
 
 	/* init MOD */
@@ -555,6 +582,16 @@ static int mod_v4l2_open(struct file *file)
 
 	rc = gb_camera_ext_power_on(cam_dev->connection,
 				    g_v4l2_data->open_mode);
+
+	/* Open could fail if the mod is out of sync, retry once */
+	if (rc < 0) {
+		gb_camera_ext_power_off(cam_dev->connection);
+		pr_err("%s - Camera power On failed, close and open\n",
+								 __func__);
+		rc = gb_camera_ext_power_on(cam_dev->connection,
+					    g_v4l2_data->open_mode);
+	}
+
 	if (rc < 0)
 		goto err_power_on;
 
@@ -653,7 +690,7 @@ static int mod_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
 static struct v4l2_file_operations camera_ext_mod_v4l2_fops = {
 	.owner		= THIS_MODULE,
 	.open		= mod_v4l2_open,
-	.ioctl		= video_ioctl2,
+	.unlocked_ioctl	= video_ioctl2,
 	.release	= mod_v4l2_close,
 	.poll		= mod_v4l2_poll,
 	.mmap		= mod_v4l2_mmap,
@@ -857,11 +894,11 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 	cam_dev->vdev_mod->release = camera_ext_dev_release;
 	cam_dev->vdev_mod->fops = &camera_ext_mod_v4l2_fops;
 	cam_dev->vdev_mod->ioctl_ops = &camera_ext_v4l2_ioctl_ops;
-	cam_dev->vdev_mod->vfl_type = VFL_TYPE_GRABBER;
+	cam_dev->vdev_mod->vfl_type = VFL_TYPE_MOT_GRABBER;
 
 	video_set_drvdata(cam_dev->vdev_mod, cam_dev);
 	retval = video_register_device(cam_dev->vdev_mod,
-				VFL_TYPE_GRABBER, -1);
+				VFL_TYPE_MOT_GRABBER, -1);
 	if (retval) {
 		pr_err("%s: failed to register video device. rc %d\n",
 			__func__, retval);
