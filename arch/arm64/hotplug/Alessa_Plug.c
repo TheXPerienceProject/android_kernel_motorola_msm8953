@@ -39,6 +39,10 @@
  * v1.4.5 code cleanup
  * v2.0.0 Improve hotplug algorithm
  * v2.1.0 Now compatible with 2 cores to 8 cores.
+ * V2.1.3 Make it less agressive drops bits in time calculation
+ * If we have long times between idle calculations this can result in deltas > 32 bits so
+ * keep time calculation in 64-bit
+ * Move Touch boost from INIT_DELAYED_WORK to INIT_WORK 
  */
 #include <asm/cputime.h>
 #include <linux/module.h>
@@ -56,13 +60,13 @@
 #define ALESSAPLUG "AlessaPlug"
 #define ALESSA_VERSION 2
 #define ALESSA_SUB_VERSION 1
-#define ALESSA_MAINTENANCE 0
+#define ALESSA_MAINTENANCE 3
 
 //disable messages
 #define DEBUGMODE 0
 
-#define CPU_LOAD_THRESHOLD    (65)
-#define MIN_CPU_LOAD_THRESHOLD (10)
+#define CPU_LOAD_THRESHOLD    (80)
+#define MIN_CPU_LOAD_THRESHOLD (30)
 #define DEF_SAMPLING_MS (500)
 #define MIN_SAMPLING_MS (50)
 //Define the min time of the cpu are up
@@ -369,8 +373,8 @@ static ssize_t __ref alessa_plug_load_store(struct kobject *kobj, struct kobj_at
 static unsigned int get_curr_load(unsigned int cpu)//Current cpu load
 {
 	int ret;
-	unsigned int idle_time, wall_time;
-	unsigned int cur_load;
+	u64 idle_time, wall_time;
+	u64 cur_load;
 	u64 cur_wall_time, cur_idle_time;
 	struct cpu_load_data *pcpu = &per_cpu(cpuload, cpu);
 	struct cpufreq_policy policy;
@@ -381,10 +385,10 @@ static unsigned int get_curr_load(unsigned int cpu)//Current cpu load
 
 	cur_idle_time = get_cpu_idle_time(cpu, &cur_wall_time, 0);
 
-	wall_time = (unsigned int) (cur_wall_time - pcpu->prev_cpu_wall);
+	wall_time = (cur_wall_time - pcpu->prev_cpu_wall);
 	pcpu->prev_cpu_wall = cur_wall_time;
 
-	idle_time = (unsigned int) (cur_idle_time - pcpu->prev_cpu_idle);
+	idle_time = (cur_idle_time - pcpu->prev_cpu_idle);
 
 	pcpu->prev_cpu_idle = cur_idle_time;
 
@@ -552,8 +556,8 @@ static struct kobj_attribute alessa_plug_tb_enabled_attribute =
 
 static struct attribute *alessa_plug_attrs[] =
     {
-        &alessa_plug_ver_attribute.attr,
-        &alessa_plug_suspend_cpu_attribute.attr,
+	&alessa_plug_ver_attribute.attr,
+	&alessa_plug_suspend_cpu_attribute.attr,
 	&alessa_plug_endurance_attribute.attr,
 	&alessa_plug_sampling_attribute.attr,
 	&alessa_plug_load_attribute.attr,
@@ -625,6 +629,6 @@ static int __init alessa_plug_init(void)
 }
 
 MODULE_LICENSE("GPL and additional rights");
-MODULE_AUTHOR("Carlos "klozz" Jesus <klozz707@gmail.com");
+MODULE_AUTHOR("Carlos 'klozz' Jesus <klozz707@gmail.com");
 MODULE_DESCRIPTION("Hotplug driver for MSM SoC's");
 late_initcall(alessa_plug_init);
