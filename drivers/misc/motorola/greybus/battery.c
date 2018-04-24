@@ -226,7 +226,8 @@ static int get_property(struct power_supply *b,
 	mutex_lock(&gb->conn_lock);
 	if (!gb->connection) {
 		mutex_unlock(&gb->conn_lock);
-		pr_err("%s: supply already free'd: %s\n", __func__, b->name);
+		pr_err("%s: supply already free'd: %s\n",
+			__func__, power_supply_name(b));
 		return -ENODEV;
 	}
 
@@ -324,6 +325,7 @@ static int init_and_register(struct gb_connection *connection,
 	struct power_supply_config cfg = {};
 
 	cfg.drv_data = gb;
+	cfg.free_drv_data = true;
 
 	// FIXME - get a better (i.e. unique) name
 	// FIXME - anything else needs to be set?
@@ -367,14 +369,13 @@ static void gb_battery_connection_exit(struct gb_connection *connection)
 {
 	struct gb_battery *gb = connection->private;
 
-#ifdef DRIVER_OWNS_PSY_STRUCT
 	mutex_lock(&gb->conn_lock);
 	gb->connection = NULL;
 	mutex_unlock(&gb->conn_lock);
+#ifdef DRIVER_OWNS_PSY_STRUCT
 	power_supply_unregister(&gb->bat);
 #else
 	power_supply_unregister(gb->bat);
-	kfree(gb);
 #endif
 }
 

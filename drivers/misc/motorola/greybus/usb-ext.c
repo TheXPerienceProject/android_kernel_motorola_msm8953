@@ -24,30 +24,6 @@ struct gb_usb_ext_data {
 	uint8_t remote_type;
 };
 
-#define GB_USB_EXT_VERSION_MAJOR     0x00
-#define GB_USB_EXT_VERSION_MINOR     0x01
-
-#define GB_USB_EXT_TYPE_READY        0x02
-#define GB_USB_EXT_TYPE_ATTACH_STATE 0x03
-
-#define GB_USB_EXT_PROTOCOL_2_0      0x00
-#define GB_USB_EXT_PROTOCOL_3_1      0x01
-
-#define GB_USB_EXT_PATH_ENTERPRISE   0x00
-#define GB_USB_EXT_PATH_BRIDGE       0x01
-
-#define GB_USB_EXT_REMOTE_DEVICE     0x00
-#define GB_USB_EXT_REMOTE_HOST       0x01
-
-struct gb_usb_ext_attach_request {
-	__u8 active;        /* attach or detach */
-	__u8 protocol;      /* 2.0 or 3.1 */
-	__u8 path;          /* tsb bridge or shared dp/usb */
-	__u8 remote_type;   /* host or device */
-} __packed;
-
-/* no data for gb_usb_ext_attach_response */
-
 static void gb_usb_ext_ap_ready_cb(struct gb_operation *operation)
 {
 	/* noop */
@@ -92,8 +68,21 @@ static int gb_usb_ext_handle_attach(struct gb_operation *operation)
 	request = operation->request->payload;
 
 	status.active = request->active;
-	status.proto = (request->protocol == GB_USB_EXT_PROTOCOL_2_0) ?
-			USB_EXT_PROTO_2_0 : USB_EXT_PROTO_3_1;
+	switch (request->protocol) {
+	case GB_USB_EXT_PROTOCOL_2_0:
+		status.proto = USB_EXT_PROTO_2_0;
+		break;
+	case GB_USB_EXT_PROTOCOL_3_1:
+		status.proto = USB_EXT_PROTO_3_1;
+		break;
+	case GB_USB_EXT_PROTOCOL_DUAL:
+		status.proto = USB_EXT_PROTO_DUAL;
+		break;
+	default:
+		status.proto = USB_EXT_PROTO_3_1;
+		break;
+	}
+
 	status.path = (request->path == GB_USB_EXT_PATH_ENTERPRISE) ?
 			USB_EXT_PATH_ENTERPRISE : USB_EXT_PATH_BRIDGE;
 	status.type = (request->remote_type == GB_USB_EXT_REMOTE_DEVICE) ?

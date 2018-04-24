@@ -22,6 +22,12 @@
 #define DRIVER_OWNS_PSY_STRUCT
 #endif
 
+#ifdef DRIVER_OWNS_PSY_STRUCT
+#define power_supply_name(p) (p->name)
+#else
+#define power_supply_name(p) (p->desc->name)
+#endif
+
 #ifndef __ATTR_WO
 #define __ATTR_WO(_name) {						\
 	.attr	= { .name = __stringify(_name), .mode = S_IWUSR },	\
@@ -267,19 +273,25 @@ static inline size_t sg_pcopy_from_buffer(struct scatterlist *sgl,
 #include <linux/led-class-flash.h>
 #endif
 
-/*#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)
 /*
  * From this version upper it was introduced the possibility to disable led
  * sysfs entries to handle control of the led device to v4l2, which was
  * implemented later. So, before that this should return false.
- *
+ */
 #include <linux/leds.h>
+/*
+ * Check to see if the 3.19 functionality to disable led sysfs entries was
+ * backported to an older kernel
+ */
+#ifndef LED_SYSFS_DISABLE
 static inline bool led_sysfs_is_disabled(struct led_classdev *led_cdev)
 {
 	return false;
 }
 #endif
-*/
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 /*
  * New helper functions for registering/unregistering flash led devices as v4l2
@@ -287,6 +299,35 @@ static inline bool led_sysfs_is_disabled(struct led_classdev *led_cdev)
  */
 #define V4L2_HAVE_FLASH
 #include <media/v4l2-flash-led-class.h>
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+/*
+ * v4l2 videobuf2 queue_setup changing arguments.
+ */
+#define V4L2_VIDEOBUF2_VOID_FORMAT
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
+/* Commit: 3e1b6c9 iio: Move buffer registration to the core */
+#define IIO_CORE_REGISTERS_BUFFER
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
+/* Commit: 7ab374a iio: kfifo: Remove unused argument in iio_kfifo_allocate */
+#define IIO_KFIFO_ALLOC_NO_PARAMS
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
+/* Commit: 4890140 ASoC: Remove snd_soc_codec dapm field */
+
+#include <sound/soc.h>
+
+static inline struct snd_soc_dapm_context
+*snd_soc_codec_get_dapm(struct snd_soc_codec *codec)
+{
+	return &codec->dapm;
+}
 #endif
 
 #endif	/* __GREYBUS_KERNEL_VER_H */
