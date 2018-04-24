@@ -21,83 +21,17 @@
 struct gb_ptp {
 	struct gb_connection	*connection;
 	struct mutex		conn_lock;
-	struct power_supply	psy;
+#ifdef DRIVER_OWNS_PSY_STRUCT
+	struct power_supply psy;
+#define to_gb_ptp(x) container_of(x, struct gb_ptp, psy)
+#define power_supply_ptr(x) (&x->psy)
+#else
+	struct power_supply *psy;
+	struct power_supply_desc desc;
+#define to_gb_ptp(x) power_supply_get_drvdata(x)
+#define power_supply_ptr(x) (x->psy)
+#endif
 };
-
-/* Version of the Greybus ptp protocol we support */
-#define	GB_PTP_VERSION_MAJOR		0x00
-#define	GB_PTP_VERSION_MINOR		0x02
-
-/* Greybus ptp operation types */
-#define GB_PTP_TYPE_GET_FUNCTIONALITY		0x02
-#define GB_PTP_TYPE_SET_CURRENT_FLOW		0x03
-#define GB_PTP_TYPE_SET_MAX_INPUT_CURRENT	0x04
-#define GB_PTP_TYPE_EXT_POWER_CHANGED		0x05
-#define GB_PTP_TYPE_EXT_POWER_PRESENT		0x06
-#define GB_PTP_TYPE_POWER_REQUIRED_CHANGED	0x07
-#define GB_PTP_TYPE_POWER_REQUIRED		0x08
-#define GB_PTP_TYPE_POWER_AVAILABLE_CHANGED	0x09 /* added in ver 00.02 */
-#define GB_PTP_TYPE_POWER_AVAILABLE		0x0A /* added in ver 00.02 */
-#define GB_PTP_TYPE_POWER_SOURCE		0x0B /* added in ver 00.02 */
-#define GB_PTP_TYPE_GET_MAX_OUTPUT_CURRENT	0x0C /* added in ver 00.02 */
-
-/* Check for operation support */
-#define GB_PTP_SUPPORTS(p, name) \
-	((p->connection->module_major > GB_PTP_SUPPORT_##name##_MAJOR) || \
-	(p->connection->module_major == GB_PTP_SUPPORT_##name##_MAJOR && \
-	p->connection->module_minor >= GB_PTP_SUPPORT_##name##_MINOR))
-
-/* Operations added in ver 00.02 */
-#define GB_PTP_SUPPORT_POWER_AVAILABLE_CHANGED_MAJOR	0x00
-#define GB_PTP_SUPPORT_POWER_AVAILABLE_CHANGED_MINOR	0x02
-#define GB_PTP_SUPPORT_POWER_AVAILABLE_MAJOR		0x00
-#define GB_PTP_SUPPORT_POWER_AVAILABLE_MINOR		0x02
-#define GB_PTP_SUPPORT_POWER_SOURCE_MAJOR		0x00
-#define GB_PTP_SUPPORT_POWER_SOURCE_MINOR		0x02
-#define GB_PTP_SUPPORT_MAX_OUTPUT_CURRENT_MAJOR		0x00
-#define GB_PTP_SUPPORT_MAX_OUTPUT_CURRENT_MINOR		0x02
-
-/* Mod internal source send power capabilities */
-#define GB_PTP_INT_SND_NEVER		0x00
-#define GB_PTP_INT_SND_SUPPLEMENTAL	0x01
-#define GB_PTP_INT_SND_LOW_BATT_SAVER	0x02
-
-/* Mod internal source receive power capabilities */
-#define GB_PTP_INT_RCV_NEVER		0x00
-#define GB_PTP_INT_RCV_FIRST		0x01
-#define GB_PTP_INT_RCV_SECOND		0x02
-#define GB_PTP_INT_RCV_PARALLEL		0x03
-
-/* Mod external source capabilities */
-#define GB_PTP_EXT_NONE			0x00
-#define GB_PTP_EXT_SUPPORTED		0x01
-
-/* Current Flow Request from Phone to Mod */
-#define GB_PTP_CURRENT_OFF		0x00
-#define GB_PTP_CURRENT_TO_MOD		0x01
-#define GB_PTP_CURRENT_FROM_MOD		0x02
-
-/* Mod External Power Presence */
-#define GB_PTP_EXT_POWER_NOT_PRESENT		0x00
-#define GP_PTP_EXT_POWER_PRESENT		0x01 /* removed in ver 00.02 */
-#define GB_PTP_EXT_POWER_WIRELESS_PRESENT	0x02 /* added in ver 00.02 */
-#define GB_PTP_EXT_POWER_WIRED_PRESENT		0x03 /* added in ver 00.02 */
-#define GB_PTP_EXT_POWER_WIRED_WIRELESS_PRESENT	0x04 /* added in ver 00.02 */
-
-/* Mod internal source power requirements */
-#define GB_PTP_POWER_NOT_REQUIRED	0x00
-#define GB_PTP_POWER_REQUIRED		0x01
-
-/* Mod power availability for Phone */
-#define GB_PTP_POWER_NOT_AVAILABLE	0x00
-#define GB_PTP_POWER_AVAILABLE_EXT	0x01
-#define GB_PTP_POWER_AVAILABLE_INT	0x02
-
-/* Mod power source supplying current to Phone*/
-#define GB_PTP_POWER_SOURCE_NONE	0x00
-#define GB_PTP_POWER_SOURCE_BATTERY	0x01
-#define GB_PTP_POWER_SOURCE_WIRED	0x02
-#define GB_PTP_POWER_SOURCE_WIRELESS	0x03
 
 static enum power_supply_property gb_ptp_props[] = {
 	POWER_SUPPLY_PROP_PTP_INTERNAL_SEND,
@@ -110,43 +44,11 @@ static enum power_supply_property gb_ptp_props[] = {
 	POWER_SUPPLY_PROP_PTP_POWER_REQUIRED,
 	POWER_SUPPLY_PROP_PTP_POWER_AVAILABLE,
 	POWER_SUPPLY_PROP_PTP_POWER_SOURCE,
+	POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_OUTPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_MAX_INPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE,
 };
-
-/* Greybus messages */
-struct gb_ptp_functionality_response {
-	__u8 int_snd;
-	__u8 int_rcv;
-	__le32 unused;
-	__u8 ext;
-} __packed;
-
-struct gb_ptp_max_output_current_response {
-	__le32 curr;
-} __packed;
-
-struct gb_ptp_ext_power_present_response {
-	__u8 present;
-} __packed;
-
-struct gb_ptp_power_required_response {
-	__u8 required;
-} __packed;
-
-struct gb_ptp_power_available_response {
-	__u8 available;
-} __packed;
-
-struct gb_ptp_power_source_response {
-	__u8 source;
-} __packed;
-
-struct gb_ptp_current_flow_request {
-	__u8 direction;
-} __packed;
-
-struct gb_ptp_max_input_current_request {
-	__le32 curr;
-} __packed;
 
 /* Internal structure */
 struct gb_ptp_functionality {
@@ -305,6 +207,18 @@ static int to_power_source_property(__u8 source)
 	case GB_PTP_POWER_SOURCE_WIRELESS:
 		prop = POWER_SUPPLY_PTP_POWER_SOURCE_WIRELESS;
 		break;
+	case GB_PTP_POWER_SOURCE_NONE_TURBO:
+		prop = POWER_SUPPLY_PTP_POWER_SOURCE_NONE_TURBO;
+		break;
+	case GB_PTP_POWER_SOURCE_BATTERY_TURBO:
+		prop = POWER_SUPPLY_PTP_POWER_SOURCE_BATTERY_TURBO;
+		break;
+	case GB_PTP_POWER_SOURCE_WIRED_TURBO:
+		prop = POWER_SUPPLY_PTP_POWER_SOURCE_WIRED_TURBO;
+		break;
+	case GB_PTP_POWER_SOURCE_WIRELESS_TURBO:
+		prop = POWER_SUPPLY_PTP_POWER_SOURCE_WIRELESS_TURBO;
+		break;
 	default:
 		prop = POWER_SUPPLY_PTP_POWER_SOURCE_UNKNOWN;
 		break;
@@ -438,6 +352,37 @@ static int gb_ptp_set_current_flow(struct gb_ptp *ptp, int direction)
 				 &request, sizeof(request), NULL, 0);
 }
 
+static int gb_ptp_get_current_flow(struct gb_ptp *ptp, int *direction)
+{
+	struct gb_ptp_current_flow_response response;
+	int retval;
+
+	if (!GB_PTP_SUPPORTS(ptp, GET_CURRENT_FLOW))
+		return -ENODEV;
+
+	retval = gb_operation_sync(ptp->connection,
+				   GB_PTP_TYPE_GET_CURRENT_FLOW, NULL, 0,
+				   &response, sizeof(response));
+	if (retval)
+		return retval;
+
+	switch (response.direction) {
+	case GB_PTP_CURRENT_OFF:
+		*direction = POWER_SUPPLY_PTP_CURRENT_OFF;
+		break;
+	case GB_PTP_CURRENT_TO_MOD:
+		*direction = POWER_SUPPLY_PTP_CURRENT_FROM_PHONE;
+		break;
+	case GB_PTP_CURRENT_FROM_MOD:
+		*direction = POWER_SUPPLY_PTP_CURRENT_TO_PHONE;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int gb_ptp_set_maximum_input_current(struct gb_ptp *ptp, int curr)
 {
 	struct gb_ptp_max_input_current_request request;
@@ -445,6 +390,73 @@ static int gb_ptp_set_maximum_input_current(struct gb_ptp *ptp, int curr)
 	request.curr = cpu_to_le32((u32)curr);
 	return gb_operation_sync(ptp->connection,
 				 GB_PTP_TYPE_SET_MAX_INPUT_CURRENT, &request,
+				 sizeof(request), NULL, 0);
+}
+
+static int gb_ptp_set_maximum_output_voltage(struct gb_ptp *ptp, int voltage)
+{
+	struct gb_ptp_max_output_voltage_request request;
+
+	if (!GB_PTP_SUPPORTS(ptp, SET_MAX_OUTPUT_VOLTAGE))
+		return 0;
+
+	request.voltage = cpu_to_le32((u32)voltage);
+	return gb_operation_sync(ptp->connection,
+				 GB_PTP_TYPE_SET_MAX_OUTPUT_VOLTAGE, &request,
+				 sizeof(request), NULL, 0);
+}
+
+static int gb_ptp_get_output_voltage(struct gb_ptp *ptp, int *voltage)
+{
+	struct gb_ptp_output_voltage_response response;
+	int retval;
+
+	if (!GB_PTP_SUPPORTS(ptp, GET_OUTPUT_VOLTAGE)) {
+		*voltage = GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED;
+		return 0;
+	}
+
+	retval = gb_operation_sync(ptp->connection,
+				   GB_PTP_TYPE_GET_OUTPUT_VOLTAGE, NULL, 0,
+				   &response, sizeof(response));
+	if (retval)
+		return retval;
+
+	*voltage = le32_to_cpu(response.voltage);
+	return 0;
+}
+
+static int gb_ptp_get_max_input_voltage(struct gb_ptp *ptp, int *voltage)
+{
+	struct gb_ptp_max_input_voltage_response response;
+	int retval;
+
+	if (!GB_PTP_SUPPORTS(ptp, GET_MAX_INPUT_VOLTAGE)) {
+		*voltage = GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED;
+		return 0;
+	}
+
+	retval = gb_operation_sync(ptp->connection,
+				   GB_PTP_TYPE_GET_MAX_INPUT_VOLTAGE, NULL, 0,
+				   &response, sizeof(response));
+	if (retval)
+		return retval;
+
+	*voltage = le32_to_cpu(response.voltage);
+	return 0;
+}
+
+static int gb_ptp_set_input_voltage(struct gb_ptp *ptp, int voltage)
+{
+	struct gb_ptp_input_voltage_request request;
+
+	if (!GB_PTP_SUPPORTS(ptp, SET_INPUT_VOLTAGE))
+		return voltage == GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED ?
+			0 : -EINVAL;
+
+	request.voltage = cpu_to_le32((u32)voltage);
+	return gb_operation_sync(ptp->connection,
+				 GB_PTP_TYPE_SET_INPUT_VOLTAGE, &request,
 				 sizeof(request), NULL, 0);
 }
 
@@ -465,7 +477,7 @@ static int gb_ptp_receive(u8 type, struct gb_operation *op)
 			return -EINVAL;
 	case GB_PTP_TYPE_EXT_POWER_CHANGED:
 	case GB_PTP_TYPE_POWER_REQUIRED_CHANGED:
-		power_supply_changed(&ptp->psy);
+		power_supply_changed(power_supply_ptr(ptp));
 		return 0;
 	default:
 		return -EINVAL;
@@ -476,7 +488,7 @@ static int gb_ptp_get_property(struct power_supply *psy,
 			       enum power_supply_property psp,
 			       union power_supply_propval *val)
 {
-	struct gb_ptp *ptp = container_of(psy, struct gb_ptp, psy);
+	struct gb_ptp *ptp = to_gb_ptp(psy);
 	struct gb_ptp_functionality func;
 	int retval;
 
@@ -484,7 +496,7 @@ static int gb_ptp_get_property(struct power_supply *psy,
 	if (!ptp->connection) {
 		mutex_unlock(&ptp->conn_lock);
 		pr_warn("%s: supply already free'd: %s\n",
-			__func__, psy->name);
+			__func__, power_supply_name(psy));
 		return -ENODEV;
 	}
 
@@ -505,6 +517,8 @@ static int gb_ptp_get_property(struct power_supply *psy,
 			val->intval = func.ext;
 		break;
 	case POWER_SUPPLY_PROP_PTP_CURRENT_FLOW:
+		retval = gb_ptp_get_current_flow(ptp, &val->intval);
+		break;
 	case POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT:
 		retval = -ENODEV; /* to make power_supply_uevent() happy */
 		break;
@@ -523,6 +537,18 @@ static int gb_ptp_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PTP_POWER_SOURCE:
 		retval = gb_ptp_power_source(ptp, &val->intval);
 		break;
+	case POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE:
+		retval = -ENODEV; /* to make power_supply_uevent() happy */
+		break;
+	case POWER_SUPPLY_PROP_PTP_OUTPUT_VOLTAGE:
+		retval = gb_ptp_get_output_voltage(ptp, &val->intval);
+		break;
+	case POWER_SUPPLY_PROP_PTP_MAX_INPUT_VOLTAGE:
+		retval = gb_ptp_get_max_input_voltage(ptp, &val->intval);
+		break;
+	case POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE:
+		retval = -ENODEV; /* to make power_supply_uevent() happy */
+		break;
 	default:
 		retval = -EINVAL;
 	}
@@ -536,14 +562,14 @@ static int gb_ptp_set_property(struct power_supply *psy,
 			       enum power_supply_property psp,
 			       const union power_supply_propval *val)
 {
-	struct gb_ptp *ptp = container_of(psy, struct gb_ptp, psy);
+	struct gb_ptp *ptp = to_gb_ptp(psy);
 	int retval;
 
 	mutex_lock(&ptp->conn_lock);
 	if (!ptp->connection) {
 		mutex_unlock(&ptp->conn_lock);
 		pr_warn("%s: supply already free'd: %s\n",
-			__func__, psy->name);
+			__func__, power_supply_name(psy));
 		return -ENODEV;
 	}
 
@@ -553,6 +579,12 @@ static int gb_ptp_set_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT:
 		retval = gb_ptp_set_maximum_input_current(ptp, val->intval);
+		break;
+	case POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE:
+		retval = gb_ptp_set_maximum_output_voltage(ptp, val->intval);
+		break;
+	case POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE:
+		retval = gb_ptp_set_input_voltage(ptp, val->intval);
 		break;
 	default:
 		retval = -EINVAL;
@@ -567,9 +599,12 @@ static int gb_ptp_property_is_writeable(struct power_supply *psy,
 				 enum power_supply_property psp)
 {
 	return psp == POWER_SUPPLY_PROP_PTP_CURRENT_FLOW ||
-	       psp == POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT;
+	       psp == POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT ||
+	       psp == POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE ||
+	       psp == POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE;
 }
 
+#ifdef DRIVER_OWNS_PSY_STRUCT
 static void gb_ptp_psy_release(struct device *dev)
 {
 	struct power_supply *psy = dev_get_drvdata(dev);
@@ -578,10 +613,64 @@ static void gb_ptp_psy_release(struct device *dev)
 	if (!psy)
 		return;
 
-	ptp = container_of(psy, struct gb_ptp, psy);
+	ptp = to_gb_ptp(psy);
 	kfree(ptp);
 	kfree(dev);
 }
+
+static int
+init_and_register(struct gb_connection *connection, struct gb_ptp *ptp)
+{
+	int retval;
+
+	/* Create a power supply */
+	ptp->psy.name		= "gb_ptp";
+	ptp->psy.type		= POWER_SUPPLY_TYPE_PTP;
+	ptp->psy.properties	= gb_ptp_props;
+	ptp->psy.num_properties	= ARRAY_SIZE(gb_ptp_props);
+	ptp->psy.get_property	= gb_ptp_get_property;
+	ptp->psy.set_property	= gb_ptp_set_property;
+	ptp->psy.property_is_writeable = gb_ptp_property_is_writeable;
+
+	retval = power_supply_register(&connection->bundle->intf->dev,
+				       &ptp->psy);
+	if (retval)
+		goto error;
+
+	ptp->psy.dev->release = gb_ptp_psy_release;
+
+error:
+	return retval;
+}
+#else
+static int
+init_and_register(struct gb_connection *connection, struct gb_ptp *ptp)
+{
+	struct power_supply_config cfg = {};
+
+	cfg.drv_data = ptp;
+	cfg.free_drv_data = true;
+
+	/* Create a power supply */
+	ptp->desc.name		= "gb_ptp";
+	ptp->desc.type		= POWER_SUPPLY_TYPE_PTP;
+	ptp->desc.properties	= gb_ptp_props;
+	ptp->desc.num_properties	= ARRAY_SIZE(gb_ptp_props);
+	ptp->desc.get_property	= gb_ptp_get_property;
+	ptp->desc.set_property	= gb_ptp_set_property;
+	ptp->desc.property_is_writeable = gb_ptp_property_is_writeable;
+
+	ptp->psy = power_supply_register(&connection->bundle->dev,
+					&ptp->desc, &cfg);
+	if (IS_ERR(ptp->psy))
+		return PTR_ERR(ptp->psy);
+
+	return 0;
+}
+#endif
+
+
+
 
 static int gb_ptp_connection_init(struct gb_connection *connection)
 {
@@ -595,21 +684,11 @@ static int gb_ptp_connection_init(struct gb_connection *connection)
 	ptp->connection = connection;
 	mutex_init(&ptp->conn_lock);
 
-	/* Create a power supply */
-	ptp->psy.name		= "gb_ptp";
-	ptp->psy.type		= POWER_SUPPLY_TYPE_PTP;
-	ptp->psy.properties	= gb_ptp_props;
-	ptp->psy.num_properties	= ARRAY_SIZE(gb_ptp_props);
-	ptp->psy.get_property	= gb_ptp_get_property;
-	ptp->psy.set_property	= gb_ptp_set_property;
-	ptp->psy.property_is_writeable = gb_ptp_property_is_writeable;
-	retval = power_supply_register(&connection->bundle->intf->dev,
-				       &ptp->psy);
+	connection->private = ptp;
+
+	retval = init_and_register(connection, ptp);
 	if (retval)
 		goto error;
-
-	ptp->psy.dev->release = gb_ptp_psy_release;
-	connection->private = ptp;
 
 	return 0;
 
@@ -625,7 +704,11 @@ static void gb_ptp_connection_exit(struct gb_connection *connection)
 	mutex_lock(&ptp->conn_lock);
 	ptp->connection = NULL;
 	mutex_unlock(&ptp->conn_lock);
+#ifdef DRIVER_OWNS_PSY_STRUCT
 	power_supply_unregister(&ptp->psy);
+#else
+	power_supply_unregister(ptp->psy);
+#endif
 }
 
 static struct gb_protocol ptp_protocol = {

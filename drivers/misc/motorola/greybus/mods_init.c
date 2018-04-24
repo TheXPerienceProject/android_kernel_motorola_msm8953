@@ -57,10 +57,22 @@ static int __init mods_init(void)
 		goto ap_fail;
 	}
 
+	err = muc_buffer_init();
+	if (err) {
+		pr_err("allocate_buffers failed: %d\n", err);
+		goto buff_fail;
+	}
+
 	err = muc_spi_init();
 	if (err) {
 		pr_err("muc_spi_init failed: %d\n", err);
 		goto spi_fail;
+	}
+
+	err = muc_i2c_init();
+	if (err) {
+		pr_err("muc_i2c_init failed: %d\n", err);
+		goto i2c_fail;
 	}
 
 	err = apba_ctrl_init();
@@ -80,8 +92,12 @@ static int __init mods_init(void)
 uart_fail:
 	apba_ctrl_exit();
 apba_fail:
+	muc_i2c_exit();
+i2c_fail:
 	muc_spi_exit();
 spi_fail:
+	muc_buffer_exit();
+buff_fail:
 	mods_ap_exit();
 ap_fail:
 	muc_svc_exit();
@@ -98,7 +114,9 @@ static void __exit mods_exit(void)
 {
 	mods_uart_exit();
 	apba_ctrl_exit();
+	muc_i2c_exit();
 	muc_spi_exit();
+	muc_buffer_exit();
 	mods_ap_exit();
 	muc_svc_exit();
 	muc_core_exit();

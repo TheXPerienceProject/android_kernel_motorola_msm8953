@@ -39,7 +39,6 @@
 #include "mods_uart.h"
 #include "mods_uart_pm.h"
 #include "muc.h"
-#include "muc_attach.h"
 
 #define MAX_PARTITION_NAME           (16)
 
@@ -178,7 +177,6 @@ struct apba_ctrl {
 	uint32_t last_unipro_value;
 	uint32_t last_unipro_status;
 	uint32_t unipro_stats[32];
-	struct platform_device *pdev;
 	struct notifier_block attach_nb;
 	unsigned long present;
 	struct workqueue_struct *wq;
@@ -395,6 +393,9 @@ static int apba_send_unipro_read_attr_req(uint16_t attribute, uint16_t selector,
 	struct mhb_hdr req_hdr;
 	struct mhb_unipro_read_attr_req req;
 
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
+
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UNIPRO;
 	req_hdr.type = MHB_TYPE_UNIPRO_READ_ATTR_REQ;
@@ -417,6 +418,9 @@ static int apba_send_unipro_write_attr_req(uint16_t attribute, uint16_t selector
 	int ret;
 	struct mhb_hdr req_hdr;
 	struct mhb_unipro_write_attr_req req;
+
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UNIPRO;
@@ -441,6 +445,9 @@ static int apba_send_unipro_gear_req(uint8_t tx, uint8_t rx, uint8_t pwrmode,
 	int ret;
 	struct mhb_hdr req_hdr;
 	struct mhb_unipro_control_req req;
+
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UNIPRO;
@@ -494,6 +501,9 @@ static int apba_send_unipro_stats_req(void)
 {
 	int ret;
 	struct mhb_hdr req_hdr;
+
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UNIPRO;
@@ -662,6 +672,9 @@ static int apba_send_uart_config_req(unsigned long val)
 	struct mhb_hdr req_hdr;
 	struct mhb_uart_config_req req;
 
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
+
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UART;
 	req_hdr.type = MHB_TYPE_UART_CONFIG_REQ;
@@ -682,6 +695,9 @@ static int apba_send_diag_mode_req(__u32 mode)
 	struct mhb_hdr req_hdr;
 	struct mhb_diag_mode_req req;
 
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
+
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_DIAG;
 	req_hdr.type = MHB_TYPE_DIAG_MODE_REQ;
@@ -700,6 +716,9 @@ static int apba_send_diag_log_req(uint8_t addr)
 {
 	int ret;
 	struct mhb_hdr req_hdr;
+
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = addr;
@@ -826,33 +845,32 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 	}
 
 	pr_info("%s: %s\n", __func__, on ? "on" : "off");
-	mods_ext_bus_vote(on);
 
 	if (on) {
+		mods_ext_bus_vote(true);
 		apba_seq(ctrl, &ctrl->enable_preclk_seq);
 		if (clk_prepare_enable(g_ctrl->mclk)) {
 			dev_err(g_ctrl->dev, "%s: failed to prepare clock.\n",
 				__func__);
 			apba_seq(ctrl, &ctrl->disable_seq);
+			mods_ext_bus_vote(false);
 			return;
 		}
 
 		if (ctrl->mods_uart)
 			mods_uart_open(ctrl->mods_uart);
-		if (ctrl->mods_uart)
-			mods_uart_pm_on(ctrl->mods_uart, true);
 
 		apba_seq(ctrl, &ctrl->enable_postclk_seq);
 		enable_irq(ctrl->irq);
 	} else {
 		ctrl->mode = 0;
 		disable_irq(ctrl->irq);
-		clk_disable_unprepare(g_ctrl->mclk);
-		if (ctrl->mods_uart) {
-			mods_uart_pm_on(ctrl->mods_uart, false);
+		if (ctrl->mods_uart)
 			mods_uart_close(ctrl->mods_uart);
-		}
+
+		clk_disable_unprepare(g_ctrl->mclk);
 		apba_seq(ctrl, &ctrl->disable_seq);
+		mods_ext_bus_vote(false);
 	}
 	ctrl->on = on;
 }
@@ -879,6 +897,7 @@ static void populate_transports_node(struct apba_ctrl *ctrl)
 {
 	struct device_node *np;
 	struct device_node *spi_np;
+	struct platform_device *pdev;
 
 	np = of_find_node_by_name(ctrl->dev->of_node, "transports");
 	if (!np) {
@@ -893,12 +912,13 @@ static void populate_transports_node(struct apba_ctrl *ctrl)
 	}
 
 	dev_dbg(ctrl->dev, "%s: creating platform device\n", __func__);
-	ctrl->pdev = of_platform_device_create(spi_np, NULL, ctrl->dev);
-	if (!ctrl->pdev) {
+	pdev = of_platform_device_create(spi_np, NULL, ctrl->dev);
+	if (!pdev) {
 		dev_warn(ctrl->dev, "failed to populate transport devices\n");
 		goto put_spi_np;
 	}
 
+	of_node_set_flag(ctrl->dev->of_node, OF_POPULATED_BUS);
 	ctrl->flash_dev_populated = true;
 
 put_spi_np:
@@ -945,8 +965,8 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 	} else {
 		if (ctrl->flash_dev_populated) {
 			of_platform_depopulate(ctrl->dev);
-			of_dev_put(ctrl->pdev);
-			ctrl->pdev = NULL;
+			of_node_clear_flag(ctrl->dev->of_node,
+						OF_POPULATED_BUS);
 			ctrl->flash_dev_populated = false;
 		}
 
@@ -1063,11 +1083,11 @@ static int apba_compare_partition(struct apba_ctrl *ctrl,
 	unsigned long cur = 0;
 	size_t readlen;
 
-	tftf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	tftf = kmalloc(PAGE_SIZE, GFP_KERNEL | GFP_DMA);
 	if (!tftf)
 		goto skip_compare;
 
-	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL | GFP_DMA);
 	if (!buf)
 		goto cleanup;
 
@@ -1218,7 +1238,7 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 		goto cleanup;
 	}
 
-	buffer = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	buffer = kzalloc(PAGE_SIZE, GFP_KERNEL | GFP_DMA);
 	if (!buffer) {
 		err = -ENOMEM;
 		goto cleanup;
@@ -1376,10 +1396,11 @@ static ssize_t apba_enable_store(struct device *dev,
 	else if (val != 0 && val != 1)
 		return -EINVAL;
 
+	/* serialize on/off operations through the work queue */
 	if (val)
-		apba_enable();
+		queue_work(g_ctrl->wq, &apba_enable_work);
 	else
-		apba_disable();
+		queue_work(g_ctrl->wq, &apba_disable_work);
 
 	return count;
 }
@@ -1957,7 +1978,7 @@ static irqreturn_t apba_isr(int irq, void *data)
 	pr_debug("%s: ctrl=%p, value=%d\n", __func__, ctrl, value);
 
 
-	if (!ctrl->desired_on || !ctrl->mods_uart) {
+	if (!ctrl->desired_on || !ctrl->mods_uart || value) {
 		pr_err("%s: int ignored\n", __func__);
 		return IRQ_HANDLED;
 	}
@@ -2045,7 +2066,8 @@ static int apba_gpio_setup(struct apba_ctrl *ctrl, struct device *dev)
 
 		gpio = of_get_gpio_flags(dev->of_node, i, &flags);
 		if (!gpio_is_valid(gpio)) {
-			dev_err(dev, "of_get_gpio failed: %d\n", gpio);
+			dev_err(dev, "of_get_gpio failed: %d index: %d\n",
+				gpio, i);
 			ret = -EINVAL;
 			goto gpio_cleanup;
 		}
@@ -2053,20 +2075,29 @@ static int apba_gpio_setup(struct apba_ctrl *ctrl, struct device *dev)
 		ret = of_property_read_string_index(dev->of_node,
 					label_prop, i, &label);
 		if (ret) {
-			dev_err(dev, "reading label failed: %d\n", ret);
+			dev_err(dev, "reading label failed: %d index: %d\n",
+				ret, i);
 			goto gpio_cleanup;
 		}
 
 		ret = devm_gpio_request_one(dev, gpio, flags, label);
-		if (ret)
+		if (ret) {
+			dev_err(dev, "failed request gpio: %d index: %d\n",
+				gpio, i);
 			goto gpio_cleanup;
+		}
 
 		ret = gpio_export(gpio, true);
-		if (ret)
+		if (ret) {
+			dev_err(dev, "failed to export gpio: %d index: %d\n",
+				gpio, i);
 			goto gpio_cleanup;
+		}
 
 		ret = gpio_export_link(dev, label, gpio);
 		if (ret) {
+			dev_err(dev, "failed to link gpio: %d index: %d\n",
+				gpio, i);
 			gpio_unexport(gpio);
 			goto gpio_cleanup;
 		}
@@ -2342,7 +2373,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, ctrl);
 
-	ctrl->wq = alloc_workqueue("apba", WQ_UNBOUND, 1);
+	ctrl->wq = create_singlethread_workqueue("apba");
 	if (!ctrl->wq) {
 		dev_err(&pdev->dev, "Failed to create workqueue\n");
 		ret = -ENOMEM;
@@ -2395,8 +2426,7 @@ free_gpios:
 	apba_gpio_free(ctrl, &pdev->dev);
 
 	of_platform_depopulate(ctrl->dev);
-	if (ctrl->pdev)
-		of_dev_put(ctrl->pdev);
+	of_node_clear_flag(ctrl->dev->of_node, OF_POPULATED_BUS);
 
 	/* Let muc core finish probe even if we bombed out. */
 	muc_enable_det();
@@ -2426,8 +2456,7 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 	apba_gpio_free(ctrl, &pdev->dev);
 
 	of_platform_depopulate(ctrl->dev);
-	if (ctrl->pdev)
-		of_dev_put(ctrl->pdev);
+	of_node_clear_flag(ctrl->dev->of_node, OF_POPULATED_BUS);
 
 	g_ctrl = NULL;
 
