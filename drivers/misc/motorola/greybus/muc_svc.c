@@ -26,7 +26,6 @@
 
 #include "mods_protocols.h"
 #include "muc.h"
-#include "muc_attach.h"
 #include "muc_svc.h"
 #include "mods_nw.h"
 
@@ -96,6 +95,8 @@ static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit);
 static int muc_svc_send_current_rsv_ack(struct mods_dl_device *dev);
 static int muc_svc_version_heartbeat(void);
+static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev);
+static int muc_svc_send_test_mode(struct mods_dl_device *mods_dev, uint32_t val);
 
 static void muc_svc_send_kobj_uevent(struct kobject *kobj, const char *event)
 {
@@ -185,6 +186,10 @@ static void muc_svc_recovery(void)
 static void muc_svc_wdog(struct work_struct *work)
 {
 	dev_err(&svc_dd->pdev->dev, "Watchdog waiting for DL device\n");
+
+	/* If we are handling watchdog for i2c transport, retry using SPI */
+	if (muc_misc_data && muc_misc_data->i2c_transport_done)
+		muc_misc_data->i2c_transport_err = true;
 	muc_svc_recovery();
 }
 
@@ -458,6 +463,35 @@ current_rsv_ack_store(struct mods_dl_device *mods_dev,
 	return count;
 }
 
+static ssize_t
+rtc_sync_store(struct mods_dl_device *mods_dev, const char *buf, size_t count)
+{
+	int ret;
+
+	/* any write to this file will send the rtc sync */
+	ret = muc_svc_send_rtc_sync(mods_dev);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static ssize_t
+test_mode_store(struct mods_dl_device *mods_dev, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long val;
+
+	if (kstrtoul(buf, 16, &val) < 0)
+		return -EINVAL;
+
+	ret = muc_svc_send_test_mode(mods_dev, val & 0xFFFFFFFF);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
 struct muc_svc_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
@@ -488,6 +522,8 @@ static MUC_SVC_ATTR(capability_reason, 0444, capability_reason_show, NULL);
 static MUC_SVC_ATTR(capability_vendor, 0444, capability_vendor_show, NULL);
 static MUC_SVC_ATTR(current_rsv_ack, 0444, NULL, current_rsv_ack_store);
 static MUC_SVC_ATTR(vendor_updates, 0444, vendor_updates_show, NULL);
+static MUC_SVC_ATTR(rtc_sync, 0200, NULL, rtc_sync_store);
+static MUC_SVC_ATTR(test_mode, 0200, NULL, test_mode_store);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -539,6 +575,8 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_capability_vendor.attr,
 	&muc_svc_attr_current_rsv_ack.attr,
 	&muc_svc_attr_vendor_updates.attr,
+	&muc_svc_attr_rtc_sync.attr,
+	&muc_svc_attr_test_mode.attr,
 	NULL,
 };
 
@@ -570,7 +608,7 @@ static int muc_svc_create_dl_dev_sysfs(struct mods_dl_device *mods_dev)
 
 	/* Hold a timed wakelock for userspace to handle attach */
 	wake_lock_timeout(&svc_dd->wlock, msecs_to_jiffies(1000));
-	kobject_uevent(&mods_dev->intf_kobj, KOBJ_ADD);
+	kobject_uevent(&mods_dev->intf_kobj, KOBJ_ONLINE);
 
 	return 0;
 
@@ -1901,6 +1939,9 @@ static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev)
 	struct timespec ts;
 	struct mb_control_rtc_sync_request req;
 
+	if (!MB_CONTROL_SUPPORTS(mods_dev, RTC_SYNC))
+		return 0;
+
 	getnstimeofday(&ts);
 	req.nsec = cpu_to_le64(timespec_to_ns(&ts));
 
@@ -1911,15 +1952,40 @@ static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev)
 	return ret;
 }
 
-static struct muc_svc_hotplug_work *
-muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
+static int muc_svc_send_test_mode(struct mods_dl_device *mods_dev, uint32_t val)
+{
+	struct device *dev = &svc_dd->pdev->dev;
+	struct gb_message *msg;
+	struct mb_control_test_mode_request request;
+
+	if (!MB_CONTROL_SUPPORTS(mods_dev, TEST_MODE))
+		return -ENOTSUPP;
+
+	request.value = cpu_to_le32(val);
+
+	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&request,
+				MB_CONTROL_TYPE_TEST_MODE, sizeof(request),
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
+
+	if (IS_ERR(msg)) {
+		dev_err(dev, "[%d] Failed to send TEST_MODE\n",
+			mods_dev->intf_id);
+		return PTR_ERR(msg);
+	}
+
+	svc_gb_msg_free(msg);
+
+	return 0;
+}
+
+static int muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 {
 	struct muc_svc_hotplug_work *hpw;
 	int ret;
 
 	hpw = kzalloc(sizeof(*hpw), GFP_KERNEL);
 	if (!hpw)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 
 	hpw->dld = mods_dev;
 	INIT_WORK(&hpw->work, muc_svc_attach_work);
@@ -1951,15 +2017,13 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 		goto free_route;
 	}
 
-	/* If supported, sync RTC clocks early so the time is correct if a
-	 * failure occurs later in the initialization sequence. This will
-	 * allow the event logs from both the AP and mod to be compared.
+	/* Sync RTC clocks early so the time is correct if a failure occurs
+	 * later in the initialization sequence. This will allow the event logs
+	 * from both the AP and mod to be compared.
 	 */
-	if (MB_CONTROL_SUPPORTS(mods_dev, RTC_SYNC)) {
-		ret = muc_svc_send_rtc_sync(mods_dev);
-		if (ret)
-			goto free_route;
-	}
+	ret = muc_svc_send_rtc_sync(mods_dev);
+	if (ret)
+		goto free_route;
 
 	/* Get the hotplug IDs */
 	ret = muc_svc_get_hotplug_data(svc_dd->dld, &hpw->hotplug, mods_dev);
@@ -1978,36 +2042,38 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 	if (MB_CONTROL_SUPPORTS(mods_dev, GET_PWRUP_REASON))
 		muc_svc_get_pwrup_reason(svc_dd->dld, mods_dev);
 
+	mods_dev->hpw = hpw;
+
 	ret = muc_svc_get_manifest(mods_dev, mods_dev->intf_id);
 	if (ret)
-		goto free_route;
+		goto clear_hpw;
 
 	muc_svc_destroy_control_route(mods_dev->intf_id,
 				mods_dev->intf_id, GB_CONTROL_CPORT_ID);
 
-	return hpw;
+	return 0;
 
+clear_hpw:
+	mods_dev->hpw = NULL;
 free_route:
 	muc_svc_destroy_control_route(mods_dev->intf_id,
 				mods_dev->intf_id, GB_CONTROL_CPORT_ID);
 free_hpw:
 	kfree(hpw);
 
-	return ERR_PTR(ret);
+	return ret;
 }
 
 static int muc_svc_generate_hotplug(struct mods_dl_device *mods_dev)
 {
-	struct muc_svc_hotplug_work *hpw;
+	int ret;
 
-	hpw = muc_svc_create_hotplug_work(mods_dev);
-	if (IS_ERR(hpw))
-		return PTR_ERR(hpw);
-
-	mods_dev->hpw = hpw;
+	ret = muc_svc_create_hotplug_work(mods_dev);
+	if (ret)
+		return ret;
 
 	if (svc_dd->authenticate == false)
-		queue_work(svc_dd->wq, &hpw->work);
+		queue_work(svc_dd->wq, &mods_dev->hpw->work);
 
 	return 0;
 }
@@ -2056,6 +2122,8 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	mutex_lock(&svc_list_lock);
 	list_del(&mods_dev->list);
 	mutex_unlock(&svc_list_lock);
+
+	flush_work(&mods_dev->hpw->work);
 
 	muc_svc_generate_unplug(mods_dev);
 
@@ -2908,7 +2976,7 @@ static int muc_svc_probe(struct platform_device *pdev)
 	 * userspace won't be able to know new sysfs entries have been
 	 * created....
 	 */
-	kobject_uevent(&pdev->dev.kobj, KOBJ_ADD);
+	kobject_uevent(&pdev->dev.kobj, KOBJ_ONLINE);
 
 	return 0;
 
