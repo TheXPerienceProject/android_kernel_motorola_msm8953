@@ -17,6 +17,7 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/notifier.h>
 #include <linux/workqueue.h>
 
 enum {
@@ -31,6 +32,10 @@ enum {
 	MUC_GPIO_BPLUS_ISET = 8,
 	MUC_GPIO_BPLUS_DISCHARG = 9,
 	MUC_GPIO_BPLUS_FAULT_N = 10,
+	MUC_GPIO_CLK = 11,
+#ifdef CONFIG_MODS_2ND_GEN
+	MUC_GPIO_SPI_I2C_SELECT = 12,
+#endif
 	MUC_MAX_GPIOS
 };
 
@@ -51,6 +56,19 @@ static inline bool muc_gpio_optional(int index)
 #define MUC_ROOT_VER_NA          0xff /* If the interface isn't master */
 
 #define MUC_MAX_SEQ (MUC_MAX_GPIOS*8)
+
+/*
+ * Maximum allowed datagram size (in bytes). A datagram may be split into
+ * multiple packets.
+ */
+#define MAX_DATAGRAM_SZ     (64 * 1024)
+
+struct muc_buffers {
+	__u8 *rx_pkt;
+	__u8 *rx_datagram;
+	__u8 *tx_pkt;
+	__u8 *tx_datagram;
+};
 
 /* BPLUS State Transitions */
 enum bplus_state {
@@ -92,6 +110,13 @@ struct muc_data {
 	u32 dis_seq[MUC_MAX_SEQ];
 	size_t dis_seq_len;
 
+#ifdef CONFIG_MODS_2ND_GEN
+	u32 select_spi_seq[MUC_MAX_SEQ];
+	size_t select_spi_seq_len;
+	u32 select_i2c_seq[MUC_MAX_SEQ];
+	size_t select_i2c_seq_len;
+#endif
+
 	/* Force Flash Sequences */
 	u32 ff_seq_v1[MUC_MAX_SEQ];
 	size_t ff_seq_v1_len;
@@ -103,20 +128,18 @@ struct muc_data {
 	struct pinctrl_state *pins_discon;
 	struct pinctrl_state *pins_spi_con;
 	struct pinctrl_state *pins_spi_ack;
+	struct pinctrl_state *pins_i2c_con;
 	bool pinctrl_disconnect;
 
 	bool need_det_output;
 	bool spi_transport_done;
 	bool i2c_transport_done;
+	bool i2c_transport_err;
 	bool spi_shared_with_flash;
 	bool det_irq_enabled;
 
 	/* Mod short detection */
 	int short_count;
-
-	/* Platform Device Pointers */
-	struct platform_device *spi_pdev;
-	struct platform_device *i2c_pdev;
 
 	u32 intr_count;
 
@@ -144,12 +167,29 @@ void muc_register_spi_flash(void);
 void muc_deregister_spi_flash(void);
 void muc_register_i2c(void);
 void muc_force_detect(u32 val);
+size_t muc_i2c_get_pkt_sz(size_t pl_size);
+size_t muc_spi_get_pkt_sz(size_t pl_size);
+struct muc_buffers *muc_get_buffers(void);
+
+/* Notification Registers */
+int register_muc_attach_notifier(struct notifier_block *nb);
+int unregister_muc_attach_notifier(struct notifier_block *nb);
+
+int register_muc_reset_notifier(struct notifier_block *nb);
+int unregister_muc_reset_notifier(struct notifier_block *nb);
+
 /* Global variables */
 extern struct muc_data *muc_misc_data;
 
 /* Driver Initializations */
+int muc_buffer_init(void);
+void muc_buffer_exit(void);
+
 int muc_spi_init(void);
 void muc_spi_exit(void);
+
+int muc_i2c_init(void);
+void muc_i2c_exit(void);
 
 int muc_core_init(void);
 void muc_core_exit(void);
