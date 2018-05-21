@@ -207,3 +207,5 @@ bosch-sensortec»    Bosch Sensortec GmbH
 lontium Lontium Semiconductor
 mx	MagnaChip Semiconductor Ltd.
 semtech Semtech Corporation
+himax	Himax Technologies, Inc.
+hxcommon	Himax Technologies, Inc.
