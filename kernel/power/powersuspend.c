@@ -236,7 +236,7 @@ static ssize_t power_suspend_mode_store(struct kobject *kobj,
 		default:
 			return -EINVAL;
 	}
-	
+
 }
 
 static struct kobj_attribute power_suspend_mode_attribute =
@@ -298,10 +298,10 @@ static int __init power_suspend_init(void)
 		return -ENOMEM;
 	}
 
-//	mode = POWER_SUSPEND_AUTOSLEEP;	// Yank555.lu : Default to autosleep mode
+	mode = POWER_SUSPEND_AUTOSLEEP;	// Yank555.lu : Default to autosleep mode
 //	mode = POWER_SUSPEND_USERSPACE;	// Yank555.lu : Default to userspace mode
 //	mode = POWER_SUSPEND_PANEL;	// Yank555.lu : Default to display panel mode
-	mode = POWER_SUSPEND_HYBRID;	// Yank555.lu : Default to display panel / autosleep hybrid mode
+//	mode = POWER_SUSPEND_HYBRID;	// Yank555.lu : Default to display panel / autosleep hybrid mode
 
 	return 0;
 }
@@ -312,7 +312,7 @@ static void __exit power_suspend_exit(void)
 		kobject_put(power_suspend_kobj);
 
 	destroy_workqueue(suspend_work_queue);
-} 
+}
 
 core_initcall(power_suspend_init);
 module_exit(power_suspend_exit);
@@ -321,4 +321,3 @@ MODULE_AUTHOR("Paul Reioux <reioux@gmail.com> / Jean-Pierre Rasquin <yank555.lu@
 MODULE_DESCRIPTION("power_suspend - A replacement kernel PM driver for"
         "Android's deprecated early_suspend/late_resume PM driver!");
 MODULE_LICENSE("GPL v2");
-
