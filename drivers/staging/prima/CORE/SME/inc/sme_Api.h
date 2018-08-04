@@ -231,6 +231,9 @@ sme_SetLinkLayerStatsIndCB
 
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
+void sme_set_vowifi_mode(tpAniSirGlobal pMac, bool enable);
+void sme_set_qpower(tpAniSirGlobal pMac, uint8_t enable);
+
 #ifdef WLAN_FEATURE_EXTSCAN
 /* ---------------------------------------------------------------------------
     \fn sme_GetValidChannelsByBand
@@ -4064,5 +4067,36 @@ sme_get_cb_phy_mode_from_cb_ini_mode(uint32_t cb_ini_value)
 {
    return csrConvertCBIniValueToPhyCBState(cb_ini_value);
 }
+
+/**
+ * sme_request_imps() - Send IMPS request
+ * @hal: hal context
+ *
+ * Return: void
+ */
+void sme_request_imps(tHalHandle hal);
+
+
+/**
+ * sme_is_sta_key_exchange_in_progress() - checks whether the STA/P2P client
+ * session has key exchange in progress
+ *
+ * @hal: global hal handle
+ * @session_id: session id
+ *
+ * Return: true - if key exchange in progress
+ *         false - if not in progress
+ */
+bool sme_is_sta_key_exchange_in_progress(tHalHandle hal, uint8_t session_id);
+/**
+ * sme_process_msg_callback() - process callback message from LIM
+ * @hal: global hal handle
+ * @msg: vos message
+ *
+ * This function process the callback messages from LIM.
+ *
+ * Return: VOS_STATUS enumeration.
+ */
+VOS_STATUS sme_process_msg_callback(tHalHandle hal, vos_msg_t *msg);
 
 #endif //#if !defined( __SME_API_H )
