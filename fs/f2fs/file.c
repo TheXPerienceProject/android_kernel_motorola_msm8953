@@ -20,6 +20,7 @@
 #include <linux/uaccess.h>
 #include <linux/mount.h>
 #include <linux/pagevec.h>
+#include <linux/uio.h>
 #include <linux/random.h>
 #include <linux/aio.h>
 
@@ -1719,6 +1720,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 static ssize_t f2fs_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
+
 	struct inode *inode = file_inode(iocb->ki_filp);
 
 	if (f2fs_encrypted_inode(inode) &&
