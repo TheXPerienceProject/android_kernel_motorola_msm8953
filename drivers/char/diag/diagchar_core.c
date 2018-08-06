@@ -171,6 +171,7 @@ uint16_t diag_debug_mask;
 void *diag_ipc_log;
 #endif
 
+extern uint16_t md_support;
 static void diag_md_session_close(int pid);
 
 /*
