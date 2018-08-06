@@ -43,6 +43,7 @@
  * If we have long times between idle calculations this can result in deltas > 32 bits so
  * keep time calculation in 64-bit
  * Move Touch boost from INIT_DELAYED_WORK to INIT_WORK 
+ * 2.1.5 Read dinamically our cpu supported (Disabled by default)
  */
 #include <asm/cputime.h>
 #include <linux/module.h>
@@ -60,7 +61,7 @@
 #define ALESSAPLUG "AlessaPlug"
 #define ALESSA_VERSION 2
 #define ALESSA_SUB_VERSION 1
-#define ALESSA_MAINTENANCE 3
+#define ALESSA_MAINTENANCE 5
 
 //disable messages
 #define DEBUGMODE 0
@@ -81,7 +82,7 @@ struct notifier_block lcd_worker;
 static int sampling_time = DEF_SAMPLING_MS;
 static int load_threshold = CPU_LOAD_THRESHOLD;
 
-static int alessa_HP_enabled = 1;//To enable or disable hotplug
+static int alessa_HP_enabled = 0;//To enable or disable hotplug
 static int touch_boost_enabled = TOUCH_BOOST_ENABLED; //To enable Touch boost
 
 //Resume
@@ -94,8 +95,8 @@ static struct delayed_work Alessa_plug_work;
 static struct workqueue_struct *Alessa_plug_boost_wq;
 static struct delayed_work Alessa_plug_touch_boost;
 //CPU CHARGE
-static unsigned int last_load[8] ={0};
-static int now[8], last_time[8];
+static unsigned int last_load[core_limit] ={0};
+static int now[core_limit], last_time[core_limit];
 
 struct cpu_load_data{
 	u64 prev_cpu_idle;
@@ -420,7 +421,7 @@ static void __cpuinit alessa_plug_resume_work_fn(struct work_struct *work)
 static void __cpuinit alessa_plug_work_fn(struct work_struct *work)
 {
 	int i;
-	unsigned int load[8], average_load[8];
+	unsigned int load[core_limit], average_load[core_limit];
 
 	switch(endurance_level)
 {
