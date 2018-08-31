@@ -624,10 +624,11 @@ static int algov_kthread_create(struct algov_policy *sg_policy)
 		return PTR_ERR(thread);
 	}
 
-	ret = sched_setscheduler_nocheck(thread, SCHED_DEADLINE, &param);//TEST with DEADLINE, then RR I know how it works with FIFO
+	ret = sched_setscheduler_nocheck(thread, SCHED_RR, &param);//Use RR for better work :P instead of force first in first out ,anyways prioritary jobs 
+                                                                   // is executed first in bot
 	if (ret) {
 		kthread_stop(thread);
-		pr_warn("%s: failed to set SCHED_DEADLINE\n", __func__);
+		pr_warn("%s: failed to set SCHED_RR\n", __func__);
 		return ret;
 	}
 
