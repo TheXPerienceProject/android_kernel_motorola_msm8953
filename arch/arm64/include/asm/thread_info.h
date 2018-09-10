@@ -56,6 +56,7 @@ struct thread_info {
 	int			preempt_count;	/* 0 => preemptable, <0 => bug */
 #ifndef CONFIG_THREAD_INFO_IN_TASK
 	int			cpu;		/* cpu */
+#endif
 #ifdef CONFIG_ARCH_THREAD_INFO_ALLOCATOR
 	phys_addr_t		phys_addr;	/* set if vmalloc */
 #endif
