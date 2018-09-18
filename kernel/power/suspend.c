@@ -87,7 +87,7 @@ void freeze_set_ops(const struct platform_freeze_ops *ops)
 static void freeze_begin(void)
 {
 	suspend_freeze_wake = false;
-	//suspend_freeze_state = FREEZE_STATE_NONE;
+	suspend_freeze_state = FREEZE_STATE_NONE;
 }
 
 static void freeze_enter(void)
@@ -96,7 +96,7 @@ static void freeze_enter(void)
 	cpuidle_resume();
 	wait_event(suspend_freeze_wait_head, suspend_freeze_wake);
 	cpuidle_pause();
-	cpuidle_use_deepest_state(false);//
+	cpuidle_use_deepest_state(false);
 
 }
 
