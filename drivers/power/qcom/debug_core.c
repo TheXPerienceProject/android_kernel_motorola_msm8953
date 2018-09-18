@@ -19,6 +19,7 @@
 #include <linux/debugfs.h>
 #include <linux/ctype.h>
 #include <linux/cpu.h>
+#include "pwrstat.h"
 #include "soc/qcom/msm-core.h"
 
 #define MAX_PSTATES 50
