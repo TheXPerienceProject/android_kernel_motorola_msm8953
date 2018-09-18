@@ -208,8 +208,10 @@ enum freeze_state {
 	FREEZE_STATE_ENTER,     /* Enter suspend-to-idle. */
 	FREEZE_STATE_WAKE,      /* Wake up from suspend-to-idle. */
 };
- extern enum freeze_state __read_mostly suspend_freeze_state;
- static inline bool idle_should_freeze(void)
+
+extern enum freeze_state __read_mostly suspend_freeze_state;
+
+static inline bool idle_should_freeze(void)
 {
 	return unlikely(suspend_freeze_state == FREEZE_STATE_ENTER);
 }
