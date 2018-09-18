@@ -46,6 +46,8 @@ static const struct platform_suspend_ops *suspend_ops;
 static const struct platform_freeze_ops *freeze_ops;
 static DECLARE_WAIT_QUEUE_HEAD(suspend_freeze_wait_head);
 static bool suspend_freeze_wake;
+enum freeze_state __read_mostly suspend_freeze_state;
+static DEFINE_SPINLOCK(suspend_freeze_lock);
 
 #ifdef CONFIG_SUSPEND_WATCHDOG
 static void suspend_watchdog_handler(unsigned long data);
@@ -85,6 +87,7 @@ void freeze_set_ops(const struct platform_freeze_ops *ops)
 static void freeze_begin(void)
 {
 	suspend_freeze_wake = false;
+	//suspend_freeze_state = FREEZE_STATE_NONE;
 }
 
 static void freeze_enter(void)
@@ -93,13 +96,15 @@ static void freeze_enter(void)
 	cpuidle_resume();
 	wait_event(suspend_freeze_wait_head, suspend_freeze_wake);
 	cpuidle_pause();
-	cpuidle_use_deepest_state(false);
+	cpuidle_use_deepest_state(false);//
+
 }
 
 void freeze_wake(void)
 {
 	suspend_freeze_wake = true;
 	wake_up(&suspend_freeze_wait_head);
+
 }
 EXPORT_SYMBOL_GPL(freeze_wake);
 
