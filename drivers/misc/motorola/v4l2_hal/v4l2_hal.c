@@ -318,7 +318,7 @@ static __u32 v4l2_hal_mmap_cid_index(__u32 id) {
 
 static bool validate_mapping(struct v4l2_stream_data *strm,
 			     struct v4l2_control *ctrl) {
-	__u32 idx;
+	__u32 idx=0;
 
 	idx = v4l2_hal_mmap_cid_index(ctrl->id);
 
@@ -334,7 +334,7 @@ static int get_ctrl(struct file *file, void *fh,
 			struct v4l2_control *ctrl)
 {
 	int ret;
-	__u32 idx;
+	__u32 idx=0;
 	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	if (v4l2_hal_is_set_mapping_cid(ctrl->id))

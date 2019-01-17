@@ -132,7 +132,7 @@ $(foreach opt,$(CONFIG_OPTIONS_DISABLE),$(if $(filter m y, $(CONFIG_$(opt))), \
 endif
 
 # add -Wall to try to catch everything we can.
-ccflags-y := -Wall
+ccflags-y := -Wall -Wno-enum-conversion -Wno-format -Wno-unused-const-variable
 
 # needed for trace events
 ccflags-y += -I$(src)
