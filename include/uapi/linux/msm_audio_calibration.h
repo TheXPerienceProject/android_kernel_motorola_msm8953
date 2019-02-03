@@ -59,7 +59,6 @@
 extern int get_audiomode(void);
 #define AUDIO_SET_FORMAT _IOWR(CAL_IOCTL_MAGIC, 231, void *)
 extern int get_audioformat(void);
->>>>>>> 31d260b... Initial AudioWizard bringup
 
 enum {
 	CVP_VOC_RX_TOPOLOGY_CAL_TYPE = 0,
