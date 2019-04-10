@@ -684,6 +684,12 @@ config MSM_BCL_PERIPHERAL_CTL
 	  provides routines to configure and monitor the BCL
 	  PMIC peripheral.
 
+config ALESSA_CHARGE_LEVEL
+       bool "Charge level interface"
+       default y
+       help
+         Alessa charge level monitoring and control interface
+
 source "drivers/power/reset/Kconfig"
 
 endif # POWER_SUPPLY

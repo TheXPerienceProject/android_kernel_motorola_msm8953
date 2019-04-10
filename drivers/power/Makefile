@@ -87,3 +87,5 @@ obj-$(CONFIG_MSM_BCL_PERIPHERAL_CTL) += bcl_peripheral.o
 obj-$(CONFIG_CHARGER_FAN54100) += fan54100-charger.o
 obj-$(CONFIG_POWER_RESET)	+= reset/
 obj-$(CONFIG_ARCH_MSM)		+= qcom/
+
+obj-$(CONFIG_ALESSA_CHARGE_LEVEL)	+= alessa_charge_level.o

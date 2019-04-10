@@ -574,6 +574,9 @@ static int smb_factory_force_apsd(struct smbchg_chip *chip);
 	pr_warn("%s: " fmt, __func__, ## arg);  \
 	} while (0)
 
+#ifdef CONFIG_ALESSA_CHARGE_LEVEL
+	struct smbchg_chip *chg_cache;
+#endif
 
 static int smbchg_read(struct smbchg_chip *chip, u8 *val,
 			u16 addr, int count)
@@ -12082,6 +12085,32 @@ static int smbchg_check_chg_version(struct smbchg_chip *chip)
 	return 0;
 }
 
+#ifdef CONFIG_ALESSA_CHARGE_LEVEL
+int get_current_now (void)
+{
+	int curr;
+
+ 	// get current and convert to mA (positive = charging, negative = discharging)
+	curr = (get_prop_batt_current_now(chg_cache) / 1000) * -1;
+
+ 	// we are only interested in charging value, set it to 0 otherwise
+	if (curr < 0)
+		curr = 0;
+
+ 	return curr;
+}
+
+ int get_charger_type (void)
+{
+	return chg_cache->supply_type;
+}
+
+ bool get_fast_charge (void)
+{
+	return get_prop_charge_type(chg_cache);
+}
+#endif
+
 #define DEFAULT_TEST_MODE_SOC  52
 #define DEFAULT_TEST_MODE_TEMP  225
 static int smbchg_probe(struct spmi_device *spmi)
@@ -12128,6 +12157,11 @@ static int smbchg_probe(struct spmi_device *spmi)
 		}
 	} else
 		usb_vadc_dev = NULL;
+
+#ifdef CONFIG_ALESSA_CHARGE_LEVEL
+	// store pointer to smbchg_chip struct in cache
+	chg_cache = chip;
+#endif
 
 	chip = devm_kzalloc(&spmi->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip) {

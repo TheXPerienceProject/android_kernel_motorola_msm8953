@@ -492,6 +492,10 @@ module_param_named(
 			pr_debug_ratelimited(fmt, ##__VA_ARGS__);	\
 	} while (0)
 
+#ifdef CONFIG_ALESSA_CHARGE_LEVEL
+	struct smbchg_chip *chg_cache;
+#endif
+
 static int smbchg_read(struct smbchg_chip *chip, u8 *val,
 			u16 addr, int count)
 {
@@ -8448,6 +8452,32 @@ static void rerun_hvdcp_det_if_necessary(struct smbchg_chip *chip)
 	}
 }
 
+#ifdef CONFIG_ALESSA_CHARGE_LEVEL
+int get_current_now (void)
+{
+	int curr;
+
+ 	// get current and convert to mA (positive = charging, negative = discharging)
+	curr = (get_prop_batt_current_now(chg_cache) / 1000) * -1;
+
+ 	// we are only interested in charging value, set it to 0 otherwise
+	if (curr < 0)
+		curr = 0;
+
+ 	return curr;
+}
+
+ int get_charger_type (void)
+{
+	return chg_cache->usb_supply_type;
+}
+
+ bool get_fast_charge (void)
+{
+	return get_prop_charge_type(chg_cache);
+}
+#endif
+
 static int smbchg_probe(struct spmi_device *spmi)
 {
 	int rc;
@@ -8507,6 +8537,11 @@ static int smbchg_probe(struct spmi_device *spmi)
 		dev_err(&spmi->dev, "Unable to allocate memory\n");
 		return -ENOMEM;
 	}
+
+#ifdef CONFIG_ALESSA_CHARGE_LEVEL
+	// store pointer to smbchg_chip struct in cache
+	chg_cache = chip;
+#endif
 
 	chip->fcc_votable = create_votable("BATT_FCC",
 			VOTE_MIN,
