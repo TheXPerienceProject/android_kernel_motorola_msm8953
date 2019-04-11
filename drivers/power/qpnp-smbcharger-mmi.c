@@ -1540,6 +1540,19 @@ static int get_prop_batt_health(struct smbchg_chip *chip)
 		return POWER_SUPPLY_HEALTH_GOOD;
 }
 
+#ifndef CONFIG_QPNP_LEGACY_CYCLE_COUNT
+static int get_prop_batt_cycle_count(struct smbchg_chip *chip)
+{
+    int cycles, rc;
+    rc = get_property_from_fg(chip, POWER_SUPPLY_PROP_CYCLE_COUNT, &cycles);
+    if (rc) {
+	pr_smb(PR_STATUS, "Couldn't get cycle count rc = %d\n", rc);
+	cycles = 0;
+    }
+    return cycles;
+}
+#endif
+
 /*
  * finds the index of the closest value in the array. If there are two that
  * are equally close, the lower index will be returned
@@ -3931,6 +3944,11 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 		else
 			val->intval = 0;
 		break;
+#ifndef CONFIG_QPNP_LEGACY_CYCLE_COUNT
+	case POWER_SUPPLY_PROP_CYCLE_COUNT:
+		val->intval = get_prop_batt_cycle_count(chip);
+	break;
+#endif
 	default:
 		return -EINVAL;
 	}
