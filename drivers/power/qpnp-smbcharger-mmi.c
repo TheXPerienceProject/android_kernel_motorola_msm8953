@@ -539,6 +539,14 @@ module_param_named(
 static int smbchg_force_apsd(struct smbchg_chip *chip);
 static int smb_factory_force_apsd(struct smbchg_chip *chip);
 
+#define pr_smb(reason, fmt, ...)				\
+	do {							\
+		if (smbchg_debug_mask & (reason))		\
+			pr_info(fmt, ##__VA_ARGS__);		\
+		else						\
+			pr_debug(fmt, ##__VA_ARGS__);		\
+	} while (0)
+
 #define SMB_INFO(chip, fmt, arg...) do {                         \
 	if ((chip) && (chip)->ipc_log)   \
 		ipc_log_string((chip)->ipc_log, \
