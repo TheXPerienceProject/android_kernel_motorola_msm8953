@@ -475,13 +475,7 @@ void gb_connection_exit(struct gb_connection *connection)
 		spin_unlock_irq(&connection->lock);
 		return;
 	}
-	if (connection->intf != NULL) {
-		connection->state = connection->intf->disconnected ?
-			GB_CONNECTION_STATE_DESTROYING :
-			GB_CONNECTION_STATE_ATTACHED_DESTROYING;
-	} else {
-		connection->state = GB_CONNECTION_STATE_DESTROYING;
-	}
+	connection->state = GB_CONNECTION_STATE_DESTROYING;
 	spin_unlock_irq(&connection->lock);
 
 	gb_connection_cancel_operations(connection, -ESHUTDOWN);
