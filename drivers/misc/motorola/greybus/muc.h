@@ -35,6 +35,7 @@ enum {
 	MUC_GPIO_CLK = 11,
 #ifdef CONFIG_MODS_2ND_GEN
 	MUC_GPIO_SPI_I2C_SELECT = 12,
+	MUC_GPIO_MOD_RGB_SELECT = 13,
 #endif
 	MUC_MAX_GPIOS
 };
@@ -47,6 +48,9 @@ static inline bool muc_gpio_optional(int index)
 	return ((index == MUC_GPIO_FORCE_FLASH) ||
 		(index == MUC_GPIO_BPLUS_ISET) ||
 		(index == MUC_GPIO_BPLUS_DISCHARG) ||
+#ifdef CONFIG_MODS_2ND_GEN
+		(index == MUC_GPIO_MOD_RGB_SELECT) ||
+#endif
 		(index == MUC_GPIO_BPLUS_FAULT_N));
 }
 

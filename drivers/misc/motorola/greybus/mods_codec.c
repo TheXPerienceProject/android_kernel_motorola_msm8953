@@ -615,12 +615,15 @@ static void mods_codec_shutdown(struct snd_pcm_substream *substream,
 	gb_mods_i2s_get(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		gb_i2s_mgmt_send_start(gb_codec,
 				GB_I2S_MGMT_PORT_TYPE_RECEIVER, false);
-	else
+		priv->rx_active = false;
+	} else {
 		gb_i2s_mgmt_send_start(gb_codec,
 				GB_I2S_MGMT_PORT_TYPE_TRANSMITTER, false);
+		priv->tx_active = false;
+	}
 
 	if (!priv->rx_active && !priv->tx_active)
 		priv->is_params_set = false;
@@ -650,6 +653,10 @@ static const struct snd_soc_dapm_widget mods_dai_dapm_widgets[] = {
 static const struct snd_soc_dapm_route mods_codec_dapm_routes[] = {
 	{"MODS_DAI_RX", NULL, "Mods Dai Playback"},
 	{"Mods Dai Capture", NULL, "MODS_DAI_TX"},
+#ifdef CONFIG_MODS_USE_EXTCODEC_MI2S
+	{"MODS_DAI_RX Playback", NULL, "MODS_DAI_RX"},
+	{"MODS_DAI_TX", NULL, "MODS_DAI_TX Capture"},
+#endif
 };
 
 static int mods_codec_probe(struct snd_soc_codec *codec)
